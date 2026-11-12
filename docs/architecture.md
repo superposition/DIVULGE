@@ -14,6 +14,10 @@ Narrative is the default graph projection. Relationships uses a force-directed l
 
 Each node offers a short label and summary. Harness Insight supplies the question, purpose, action, observation, explanation, evidence, uncertainty, and next useful probe. It is human-facing rationale and a durable evidence record, not a hidden chain-of-thought display.
 
+Questions also carry a persisted `QuestionPlan`: why the question matters, a bounded sequence of investigation steps, the decision its answer enables, sufficient-evidence criteria, and the alternative path if the check fails. Probe, observation, and explanation records explicitly identify their owning question. A support edge alone does not establish that ownership. Selecting a question puts its plan ahead of raw data; evidence records keep the question context expandable. Focus question and graph double-click explicitly zoom the camera; normal selection does not move it. Related-response links respect the replay frontier.
+
+Schema v2 adds these plans and ownership links. Version 1 files migrate without fabricating missing plans. Validate question targets and required plan fields when loading; planning text is not proof that its criterion has been met.
+
 ## Attention and execution
 
 Keep the execution frontier distinct from the human attention cursor. Selecting an earlier record or panning detaches follow mode. New results can accumulate without moving the selection or scrolling the text. Review next advances at the reader's pace; Follow latest explicitly catches up.

@@ -1,4 +1,4 @@
-use crate::domain::{Artifact, Investigation};
+use crate::domain::{Artifact, Investigation, SCHEMA_VERSION};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
@@ -54,8 +54,12 @@ pub fn load(path: &Path) -> Result<Investigation, String> {
     if bytes.len() as u64 > MAX_SESSION_BYTES {
         return Err("Investigation exceeds the 8 MiB load limit".into());
     }
-    let investigation: Investigation =
+    let mut investigation: Investigation =
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    // Version 1 had no saved question plans. Preserve that absence during migration.
+    if investigation.schema_version == 1 {
+        investigation.schema_version = SCHEMA_VERSION;
+    }
     investigation.validate()?;
     Ok(investigation)
 }
@@ -122,6 +126,16 @@ mod tests {
         let restored = load(&session_path).unwrap();
         assert_eq!(restored.records.len(), 5);
         assert_eq!(restored.artifact.unwrap().preview, b"abc");
+        let mut legacy = serde_json::to_value(&session).unwrap();
+        legacy["schema_version"] = 1.into();
+        for record in legacy["records"].as_array_mut().unwrap() {
+            record.as_object_mut().unwrap().remove("question_id");
+            record.as_object_mut().unwrap().remove("question_plan");
+        }
+        fs::write(&session_path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let migrated = load(&session_path).unwrap();
+        assert_eq!(migrated.schema_version, SCHEMA_VERSION);
+        assert!(migrated.records.iter().all(|r| r.question_plan.is_none()));
         fs::write(&session_path, b"{broken").unwrap();
         assert!(load(&session_path).is_err());
         fs::remove_dir_all(root).unwrap();

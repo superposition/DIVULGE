@@ -26,6 +26,8 @@ Ask -> Predict -> Code -> Observe -> Explain -> Find it in the app.
 
 Each lesson page has one primary concept, a small code block, its output, a visual link to the application, and room for a prediction. Include concise instructor prompts with expected answers in a separate appendix. Never require an audience to read a wall of model output while listening.
 
+Use the implemented `QuestionPlan` as a concrete struct example: `why`, `steps: Vec<String>`, `enables`, `answered_when`, and `if_not`. Its meaning is visible through Focus question. `Record.question_id: Option<RecordId>` explicitly associates a probe or response with its question; a missing saved plan remains missing on import. Ask learners to state what a successful answer would enable before running a probe.
+
 ## Planned PDF: approximately 16-18 pages
 
 1. Preparation and run instructions: one page, tested versions, fallback saved investigation.

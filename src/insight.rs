@@ -1,6 +1,6 @@
 //! Terminal-style evidence inspection. Scalar views are interpretations, not recovered types.
 use crate::graph::{ACCENT, kind_color};
-use divulge::domain::{Investigation, Observation, Origin, RecordData, RecordId};
+use divulge::domain::{Investigation, Observation, Origin, QuestionPlan, RecordData, RecordId};
 use eframe::egui::{self, Color32, FontId, RichText};
 
 pub const SURFACE: Color32 = Color32::from_rgb(10, 15, 18);
@@ -34,9 +34,12 @@ impl Inspector {
         ui: &mut egui::Ui,
         session: &mut Investigation,
         selected_index: usize,
+        visible_count: usize,
         show_types: bool,
     ) -> Response {
         let record = session.records[selected_index].clone();
+        let question = session.question_for(record.id).cloned();
+        let owns_question = question.as_ref().is_some_and(|q| q.id == record.id);
         let mut response = Response::default();
         let observation = match &record.data {
             RecordData::Observation(bytes) => Some((record.id, bytes.clone())),
@@ -86,6 +89,72 @@ impl Inspector {
                 ));
                 ui.add_space(10.0);
 
+                if let Some(question) = &question {
+                    let plan = question.question_plan.as_ref().unwrap();
+                    if owns_question {
+                        transcript(
+                            ui,
+                            "? what are we trying to find out?",
+                            &question.insight.question,
+                            ACCENT,
+                        );
+                        question_plan(ui, plan);
+                        ui.label(mono("-> probes and responses", ACCENT));
+                        let mut linked_count = 0;
+                        for (index, related) in
+                            session.records.iter().take(visible_count).enumerate()
+                        {
+                            if related.question_id == Some(question.id) {
+                                linked_count += 1;
+                                if ui
+                                    .link(mono(
+                                        format!(
+                                            "[{:04}] {} / {}",
+                                            related.id.0,
+                                            related.data.label().to_lowercase(),
+                                            related.title
+                                        ),
+                                        kind_color(&related.data),
+                                    ))
+                                    .clicked()
+                                {
+                                    response.selected_record = Some(index);
+                                }
+                            }
+                        }
+                        if linked_count == 0 {
+                            ui.label(mono("No probe result is available at this step.", DIM));
+                        }
+                    } else {
+                        egui::CollapsingHeader::new(mono(
+                            format!("? question #{:04} / why, how, to what end", question.id.0),
+                            ACCENT,
+                        ))
+                        .id_salt(("question_context", record.id.0))
+                        .show(ui, |ui| {
+                            transcript(ui, "question", &question.insight.question, ACCENT);
+                            question_plan(ui, plan);
+                            if ui.link(mono("Open this question", ACCENT)).clicked() {
+                                response.selected_record =
+                                    session.records.iter().position(|r| r.id == question.id);
+                            }
+                        });
+                    }
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+                } else if matches!(
+                    record.data,
+                    RecordData::Question | RecordData::Unknown { .. }
+                ) {
+                    transcript(ui, "? question", &record.insight.question, ACCENT);
+                    ui.label(mono(
+                        "No detailed question plan was saved with this record.",
+                        AMBER,
+                    ));
+                    ui.add_space(10.0);
+                }
+
                 if let Some(artifact) = &session.artifact {
                     line(ui, "file", &artifact.name);
                     line(
@@ -120,14 +189,16 @@ impl Inspector {
                 ui.add_space(12.0);
                 ui.separator();
                 ui.add_space(10.0);
-                transcript(ui, "? question", &record.insight.question, ACCENT);
-                transcript(ui, ":: purpose", &record.insight.purpose, DIM);
-                transcript(
-                    ui,
-                    "> action",
-                    &record.insight.action,
-                    Color32::from_rgb(179, 164, 221),
-                );
+                if !owns_question {
+                    transcript(ui, "? question", &record.insight.question, ACCENT);
+                    transcript(ui, ":: purpose", &record.insight.purpose, DIM);
+                    transcript(
+                        ui,
+                        "> action",
+                        &record.insight.action,
+                        Color32::from_rgb(179, 164, 221),
+                    );
+                }
                 transcript(ui, "< observation", &record.insight.observation, ACCENT);
                 transcript(
                     ui,
@@ -340,6 +411,49 @@ fn transcript(ui: &mut egui::Ui, prompt: &str, body: &str, color: Color32) {
     ui.label(mono(prompt, color).strong());
     ui.add(egui::Label::new(mono(body, OUTPUT)).wrap().selectable(true));
     ui.add_space(10.0);
+}
+
+fn question_plan(ui: &mut egui::Ui, plan: &QuestionPlan) {
+    transcript(
+        ui,
+        "WHY / why ask this?",
+        &plan.why,
+        Color32::from_rgb(138, 178, 239),
+    );
+    ui.label(
+        mono(
+            "HOW / how will we answer?",
+            Color32::from_rgb(179, 164, 221),
+        )
+        .strong(),
+    );
+    for (index, step) in plan.steps.iter().enumerate() {
+        ui.add(
+            egui::Label::new(mono(format!("{}. {step}", index + 1), OUTPUT))
+                .wrap()
+                .selectable(true),
+        );
+        ui.add_space(4.0);
+    }
+    ui.add_space(6.0);
+    transcript(
+        ui,
+        "TO WHAT END / what does this enable?",
+        &plan.enables,
+        ACCENT,
+    );
+    transcript(
+        ui,
+        "ANSWERED WHEN / what evidence is enough?",
+        &plan.answered_when,
+        Color32::from_rgb(218, 197, 133),
+    );
+    transcript(
+        ui,
+        "IF NOT / what changes our next step?",
+        &plan.if_not,
+        AMBER,
+    );
 }
 
 #[cfg(test)]

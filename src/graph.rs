@@ -23,6 +23,7 @@ pub struct GraphView {
 pub struct GraphResponse {
     pub selected: Option<usize>,
     pub moved: bool,
+    pub focus_question: bool,
 }
 
 impl Default for GraphView {
@@ -114,6 +115,29 @@ impl GraphView {
             .expand(36.0);
     }
 
+    pub fn focus_question(&mut self, session: &Investigation, index: usize, visible: usize) {
+        if self.positions.len() != session.records.len() {
+            self.reset(session);
+        }
+        let question_id = session.records[index].id;
+        self.bounds = session
+            .records
+            .iter()
+            .enumerate()
+            .take(visible)
+            .filter(|(_, record)| {
+                record.id == question_id
+                    || session
+                        .edges
+                        .iter()
+                        .any(|edge| edge.from == question_id && edge.to == record.id)
+            })
+            .fold(Rect::NOTHING, |rect, (i, _)| {
+                rect.union(Rect::from_min_size(self.positions[i], NODE_SIZE))
+            })
+            .expand(48.0);
+    }
+
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -126,6 +150,7 @@ impl GraphView {
         }
         let mut selection = None;
         let mut node_moved = false;
+        let mut focus_question = false;
         let scene = egui::Scene::new()
             .zoom_range(0.25..=1.6)
             .show(ui, &mut self.bounds, |ui| {
@@ -203,6 +228,10 @@ impl GraphView {
                     if response.clicked() {
                         selection = Some(i);
                     }
+                    if response.double_clicked() {
+                        selection = Some(i);
+                        focus_question = true;
+                    }
                     if response.dragged() {
                         self.positions[i] += response.drag_delta();
                         node_moved = true;
@@ -259,16 +288,25 @@ impl GraphView {
                         NODE_SIZE.x - 28.0,
                     );
                     painter.galley(rect.min + Vec2::new(14.0, 64.0), summary, MUTED);
-                    response.on_hover_text(format!(
-                        "{}\n{}",
-                        record.data.rust_type(),
-                        record.summary
-                    ));
+                    response.on_hover_ui(|ui| {
+                        ui.set_max_width(370.0);
+                        if let Some(question) = session.question_for(record.id) {
+                            let plan = question.question_plan.as_ref().unwrap();
+                            ui.strong(&question.insight.question);
+                            ui.label(format!("Why: {}", plan.why));
+                            ui.label(format!("Enables: {}", plan.enables));
+                            ui.label("Double-click to focus this question and inspect its method.");
+                        } else {
+                            ui.label(record.data.rust_type());
+                            ui.label(&record.summary);
+                        }
+                    });
                 }
             });
         GraphResponse {
             selected: selection,
             moved: node_moved || scene.response.changed(),
+            focus_question,
         }
     }
 }

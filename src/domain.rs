@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 pub const V15_SHA256: &str = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a";
 pub const V15_LENGTH: u64 = 699_956;
 
@@ -92,6 +92,15 @@ pub struct HarnessInsight {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QuestionPlan {
+    pub why: String,
+    pub steps: Vec<String>,
+    pub enables: String,
+    pub answered_when: String,
+    pub if_not: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Record {
     pub id: RecordId,
     pub title: String,
@@ -99,6 +108,11 @@ pub struct Record {
     pub data: RecordData,
     pub insight: HarnessInsight,
     pub note: String,
+    /// Explicit question ownership; an evidence edge alone does not imply ownership.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_id: Option<RecordId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_plan: Option<QuestionPlan>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,6 +194,39 @@ impl Investigation {
             if record.id.0 == 0 || !ids.insert(record.id) {
                 return Err("Record IDs must be nonzero and unique".into());
             }
+            if let Some(plan) = &record.question_plan
+                && (!matches!(
+                    record.data,
+                    RecordData::Question | RecordData::Unknown { .. }
+                ) || record.question_id.is_some()
+                    || [
+                        &plan.why,
+                        &plan.enables,
+                        &plan.answered_when,
+                        &plan.if_not,
+                        &record.insight.question,
+                    ]
+                    .iter()
+                    .any(|text| text.trim().is_empty())
+                    || plan.steps.is_empty()
+                    || plan.steps.len() > 8
+                    || plan.steps.iter().any(|step| step.trim().is_empty()))
+            {
+                return Err("A question plan requires a question, rationale, bounded method, outcome, and answer criteria".into());
+            }
+            if let Some(question_id) = record.question_id
+                && (question_id == record.id
+                    || !self.records.iter().any(|question| {
+                        question.id == question_id
+                            && question.question_plan.is_some()
+                            && matches!(
+                                question.data,
+                                RecordData::Question | RecordData::Unknown { .. }
+                            )
+                    }))
+            {
+                return Err("Record references a missing question plan".into());
+            }
             if let RecordData::Observation(obs) = &record.data {
                 if obs.offset.0.checked_add(obs.bytes.len() as u64).is_none() {
                     return Err("Observation byte range overflows".into());
@@ -226,9 +273,19 @@ impl Investigation {
         self.records.iter().find(|record| record.id == id)
     }
 
+    pub fn question_for(&self, id: RecordId) -> Option<&Record> {
+        let record = self.record(id)?;
+        if record.question_plan.is_some() {
+            Some(record)
+        } else {
+            self.record(record.question_id?)
+                .filter(|question| question.question_plan.is_some())
+        }
+    }
+
     pub fn workshop() -> Self {
         let insight = HarnessInsight {
-            question: "What do these two bytes tell us?".into(),
+            question: "What can we establish from these two bytes, and what are we only assuming about their meaning?".into(),
             purpose: "Separate a byte observation from our choice of interpretation.".into(),
             action: "Read the teaching fixture at file offset 0; interpret its two bytes as a little-endian u16.".into(),
             observation: "The fixture contains exactly two bytes: 34 12 (hexadecimal).".into(),
@@ -239,7 +296,7 @@ impl Investigation {
         let descriptions = [
             (
                 "What do these bytes mean?",
-                "Start with a question we can test.",
+                "Separate byte evidence from an assumed meaning.",
                 RecordData::Question,
             ),
             (
@@ -317,6 +374,41 @@ impl Investigation {
                 Record {
                     id: RecordId(i as u64 + 1), title: title.into(), summary: summary.into(),
                     data, insight: step, note: String::new(),
+                    question_id: match i { 1..=3 => Some(RecordId(1)), _ => None },
+                    question_plan: match i {
+                        0 => Some(QuestionPlan {
+                            why: "The same bytes can encode a number, text, or part of an instruction. Choosing a type too early makes an assumption look like evidence.".into(),
+                            steps: vec![
+                                "Read exactly two bytes at file offset 0 and retain the raw values.".into(),
+                                "Interpret them as u16 in each byte order; compare the results.".into(),
+                                "State which facts the read establishes and which meaning still needs evidence.".into(),
+                            ],
+                            enables: "Build an observation we can reproduce, then choose a useful question about what the field does.".into(),
+                            answered_when: "We can reproduce the byte values and each numeric interpretation without claiming that either is the original source type.".into(),
+                            if_not: "If fewer than two bytes are available, report an incomplete read. If both interpretations are possible, preserve both.".into(),
+                        }),
+                        4 => Some(QuestionPlan {
+                            why: "A numeric conversion tells us a value, not whether it is a count, an address, a setting, or unrelated data.".into(),
+                            steps: vec![
+                                "List plausible roles without choosing one as fact.".into(),
+                                "Look for a format declaration or a controlled example that distinguishes those roles.".into(),
+                            ],
+                            enables: "Name the field for a demonstrated purpose instead of attaching a convincing but unsupported label.".into(),
+                            answered_when: "Independent evidence associates the exact field with one role and rules out relevant alternatives.".into(),
+                            if_not: "Keep the role unknown and record the evidence needed to distinguish the remaining explanations.".into(),
+                        }),
+                        5 => Some(QuestionPlan {
+                            why: "Repeating the same conversion cannot resolve the field's role. We need a probe whose outcomes separate competing explanations.".into(),
+                            steps: vec![
+                                "Choose two competing roles and write down what each predicts.".into(),
+                                "Select a known example or controlled change that would produce different evidence for those roles.".into(),
+                            ],
+                            enables: "Turn an open-ended guess into a testable next step that someone else can repeat.".into(),
+                            answered_when: "The proposed probe names its inputs, expected distinguishing outcomes, and how each outcome changes our conclusion.".into(),
+                            if_not: "If the outcomes would look the same, redesign the probe before spending effort on it.".into(),
+                        }),
+                        _ => None,
+                    },
                 }
             })
             .collect();
@@ -340,7 +432,7 @@ impl Investigation {
     pub fn from_artifact(artifact: Artifact) -> Self {
         let matched = artifact.matches_v15_reference();
         let insight = HarnessInsight {
-            question: "Which exact artifact are we investigating?".into(),
+            question: "Does this file match the exact FM-1 V15 image our decoder profile expects?".into(),
             purpose: "Bind future observations to the same file content.".into(),
             action: "Read the selected file in a worker; calculate SHA-256 and retain its first 256 bytes.".into(),
             observation: format!("{} bytes. SHA-256: {}", artifact.length, artifact.sha256),
@@ -348,14 +440,26 @@ impl Investigation {
             uncertainty: "Hashing does not decode the package or establish runtime behavior. The firmware parser, REA adapter, pi32v2 decoder, and AI harness are not connected in this foundation build.".into(),
             next_step: if matched { "Implement the checked FWSC package reader and trace each derived range back to this artifact.".into() } else { "Keep this artifact available for generic inspection; V15-specific parsing requires an exact identity match.".into() },
         };
-        let records = vec![
+        let mut records = vec![
             Record {
                 id: RecordId(1),
-                title: "Which artifact is this?".into(),
-                summary: "Establish identity before interpretation.".into(),
+                title: "Is this the expected V15?".into(),
+                summary: "Choose a decoder using identity evidence.".into(),
                 data: RecordData::Question,
                 insight: insight.clone(),
                 note: String::new(),
+                question_id: None,
+                question_plan: Some(QuestionPlan {
+                    why: "A filename can be renamed, and different firmware versions can use different layouts. The wrong profile could turn package bytes into believable but incorrect addresses.".into(),
+                    steps: vec![
+                        "Read the selected file; record its length and calculate SHA-256 over the complete byte stream.".into(),
+                        "Compare both values with the configured official V15 reference.".into(),
+                        "Record a match or mismatch before selecting a version-specific decoder.".into(),
+                    ],
+                    enables: "A match lets us select the V15 package profile and attach later observations to this exact artifact.".into(),
+                    answered_when: "The actual byte length and SHA-256 have both been compared. A mismatch answers the identity question too; it does not qualify the file as V15.".into(),
+                    if_not: "For a mismatch, continue generic inspection and identify the correct format. Do not apply V15 offsets or assume the file is corrupt.".into(),
+                }),
             },
             Record {
                 id: RecordId(2),
@@ -366,6 +470,8 @@ impl Investigation {
                 },
                 insight: insight.clone(),
                 note: String::new(),
+                question_id: Some(RecordId(1)),
+                question_plan: None,
             },
             Record {
                 id: RecordId(3),
@@ -378,6 +484,8 @@ impl Investigation {
                 }),
                 insight: insight.clone(),
                 note: String::new(),
+                question_id: Some(RecordId(1)),
+                question_plan: None,
             },
             Record {
                 id: RecordId(4),
@@ -393,18 +501,67 @@ impl Investigation {
                 },
                 insight: insight.clone(),
                 note: String::new(),
+                question_id: Some(RecordId(1)),
+                question_plan: None,
             },
             Record {
                 id: RecordId(5),
-                title: "How is this file structured?".into(),
-                summary: "Package decoding is the next milestone.".into(),
+                title: if matched { "Where is the application?".into() } else { "What format is this file?".into() },
+                summary: "Find the bytes a decoder should inspect.".into(),
                 data: RecordData::Unknown {
                     next_probe: "Decode and validate package records".into(),
                 },
                 insight,
                 note: String::new(),
+                question_id: None,
+                question_plan: Some(if matched { QuestionPlan {
+                    why: "The FWSC package contains structure around the program. Disassembling the container as instructions would confuse packaging bytes with application code.".into(),
+                    steps: vec![
+                        "Decode the package records and validate their byte ranges and supported checksums.".into(),
+                        "Locate the application and preserve the mapping back to the original file bytes.".into(),
+                        "Establish a load map before interpreting file offsets as pi32v2 addresses.".into(),
+                    ],
+                    enables: "Give the pi32v2 decoder the correct application bytes and address context, so instruction and branch claims can point back to evidence.".into(),
+                    answered_when: "A checked application span, transformation provenance, and justified address mapping are available. A plausible-looking instruction listing is insufficient.".into(),
+                    if_not: "Retain unsupported checks and ambiguous mappings as unknown. The package parser and load map are not connected in this build.".into(),
+                }} else { QuestionPlan {
+                    why: "The file does not match our V15 reference. Assuming its format would make every later offset and type interpretation unreliable.".into(),
+                    steps: vec![
+                        "Inspect signatures, declared sizes, and a bounded set of bytes.".into(),
+                        "Compare those observations with an identified format specification before selecting a parser.".into(),
+                    ],
+                    enables: "Select a suitable parser and establish the boundaries of data it can interpret.".into(),
+                    answered_when: "A format is supported by independent structural checks, with its unsupported regions recorded.".into(),
+                    if_not: "Keep generic byte inspection available and preserve the format as unresolved.".into(),
+                }}),
             },
         ];
+        records[0].insight.action =
+            "Plan a full-file identity check before choosing a decoder.".into();
+        records[0].insight.observation =
+            "The result of this question is recorded in its observation and explanation nodes."
+                .into();
+        records[0].insight.explanation =
+            "Identity is the first decision: the filename alone cannot select a firmware profile."
+                .into();
+        records[1].insight.observation =
+            "The read and hash results are retained in the following observation.".into();
+        records[1].insight.explanation =
+            "Use the complete byte stream, not only the preview, for the identity comparison."
+                .into();
+        records[2].insight.explanation = "The byte length, digest, and preview are observations. The reference comparison is recorded separately.".into();
+        records[4].insight.question = if matched {
+            "Where are the application bytes, and how do their file offsets become pi32v2 addresses?".into()
+        } else {
+            "Which format describes this file's structure?".into()
+        };
+        records[4].insight.purpose = records[4].question_plan.as_ref().unwrap().why.clone();
+        records[4].insight.action = "Proposed investigation; no package decoder has run.".into();
+        records[4].insight.observation =
+            "No decoded package or application span has been recorded.".into();
+        records[4].insight.explanation =
+            "This question remains open. Use the plan above to identify the missing evidence."
+                .into();
         let mut session = Self::workshop();
         session.title = artifact.name.clone();
         session.objective =
@@ -529,5 +686,33 @@ mod tests {
                 .explanation
                 .contains("4660")
         );
+    }
+
+    #[test]
+    fn question_ownership_survives_roundtrip_and_rejects_invalid_targets() {
+        let session = Investigation::workshop();
+        let encoded = serde_json::to_vec(&session).unwrap();
+        let mut restored: Investigation = serde_json::from_slice(&encoded).unwrap();
+        restored.validate().unwrap();
+        assert_eq!(restored.question_for(RecordId(4)).unwrap().id, RecordId(1));
+        assert_eq!(restored.question_for(RecordId(5)).unwrap().id, RecordId(5));
+        assert!(
+            !restored.records[0]
+                .question_plan
+                .as_ref()
+                .unwrap()
+                .enables
+                .is_empty()
+        );
+        restored.records[3].question_id = Some(RecordId(3));
+        assert!(restored.validate().is_err());
+        restored.records[3].question_id = Some(RecordId(1));
+        restored.records[0]
+            .question_plan
+            .as_mut()
+            .unwrap()
+            .steps
+            .clear();
+        assert!(restored.validate().is_err());
     }
 }

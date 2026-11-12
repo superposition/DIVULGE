@@ -34,3 +34,7 @@ Still pending: the final-build visual pass, 1280x720 and 1920x1080 checks, nativ
 ## Terminal evidence inspector
 
 2026-11-12: built a separate native preview with the terminal-style right pane and the actual locally supplied V15 artifact. Visually verified the monospace transcript, artifact identity, file range, hex/ASCII rows, and scalar values. Selected the byte at file offset 0x00000001 through Computer Use and observed the little-endian u16 view change to 0x2F7B and u32 to 0x3F0C2F7B. The pane explicitly distinguishes file offsets from unresolved mapped addresses and states that instructions have not been decoded. Seven tests and Clippy pass. The earlier native save/reopen and compact-layout checks remain open.
+
+## Question focus
+
+2026-11-12: built and opened the question-plan preview on the local V15 artifact. Through native Computer Use, clicked Focus question from the identity explanation. Observed selection move to question 0001, the graph zoom onto the question and next probe, and the terminal pane show WHY, HOW, TO WHAT END, ANSWERED WHEN, IF NOT, and links to the available probe/observation/explanation. Fit all remains visible as the return to overview. Eight tests pass, including question ownership/plan validation and v1-to-v2 load migration without invented context. Native save/reopen verification remains pending as recorded above.

@@ -428,12 +428,29 @@ impl DivulgeApp {
             ui,
             &mut self.session,
             self.attention.selected_index,
+            self.attention.visible_count,
             self.show_types,
         );
         if let Some(index) = response.selected_record {
             self.attention.select(index);
         }
         self.dirty |= response.note_changed;
+    }
+
+    fn focus_question(&mut self) {
+        if let Some(question) = self.session.question_for(self.selected().id)
+            && let Some(index) = self
+                .session
+                .records
+                .iter()
+                .position(|r| r.id == question.id)
+            && index < self.attention.visible_count
+        {
+            self.attention.select(index);
+            self.show_insight = true;
+            self.graph
+                .focus_question(&self.session, index, self.attention.visible_count);
+        }
     }
 
     fn center(&mut self, ui: &mut egui::Ui) {
@@ -447,9 +464,13 @@ impl DivulgeApp {
                 );
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Fit").clicked() {
+                if ui.button("Fit all").clicked() {
                     self.graph.fit();
                 }
+                if ui.add_enabled(self.session.question_for(self.selected().id).is_some(), egui::Button::new("Focus question"))
+                    .on_hover_text("Zoom to the question and its next probe; open why, how, and what the answer enables.")
+                    .clicked()
+                { self.focus_question(); }
             });
         });
         ui.add_space(10.0);
@@ -486,6 +507,9 @@ impl DivulgeApp {
         }
         if response.moved {
             self.attention.following = false;
+        }
+        if response.focus_question {
+            self.focus_question();
         }
     }
 
