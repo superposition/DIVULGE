@@ -256,6 +256,61 @@ impl Inspector {
                 }
                 transcript(ui, "! unresolved", &record.insight.uncertainty, AMBER);
                 transcript(ui, "> next probe", &record.insight.next_step, ACCENT);
+                if let Some(run) = session.ai_runs.iter().find(|run| run.record == record.id) {
+                    ui.label(mono("@ OMP / proposal receipt", ACCENT));
+                    if !run.diagnostic.is_empty() {
+                        ui.label(mono(&run.diagnostic, AMBER));
+                    }
+                    ui.label(mono(
+                        format!("{} / {} / probe not executed", run.id, run.outcome),
+                        DIM,
+                    ));
+                    if let Some(proposal) = &run.proposal {
+                        for id in &proposal.evidence {
+                            if let Some(index) = session.records.iter().position(|r| r.id == *id)
+                                && ui
+                                    .link(mono(format!("Evidence #{:04}", id.0), ACCENT))
+                                    .clicked()
+                            {
+                                response.selected_record = Some(index);
+                            }
+                        }
+                    }
+                    ui.collapsing("Model / isolation / recorded transcript", |ui| {
+                        ui.label(mono(format!("Context SHA-256 {}", run.context_sha256), DIM));
+                        for event in &run.events {
+                            if event.kind == "ready" {
+                                ui.label(mono(
+                                    format!(
+                                        "Model {} / SDK {} / CLI {} / tools {}",
+                                        event.data["selected"],
+                                        event.data["sdk_version"],
+                                        event.data["cli_version"],
+                                        event.data["active_tools"]
+                                    ),
+                                    OUTPUT,
+                                ));
+                            } else if event.kind != "draft" {
+                                ui.add(
+                                    egui::Label::new(mono(
+                                        format!("{} {}", event.kind, event.data),
+                                        OUTPUT,
+                                    ))
+                                    .wrap(),
+                                );
+                            }
+                        }
+                    });
+                    ui.collapsing("Exact supplied evidence snapshot", |ui| {
+                        ui.add(
+                            egui::Label::new(mono(
+                                serde_json::to_string_pretty(&run.context).unwrap(),
+                                DIM,
+                            ))
+                            .wrap(),
+                        );
+                    });
+                }
                 if show_types {
                     ui.collapsing(mono("types / record schema", DIM), |ui| {
                         ui.add(

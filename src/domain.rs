@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 pub const V15_SHA256: &str = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a";
 pub const V15_LENGTH: u64 = 699_956;
 
@@ -190,10 +190,53 @@ pub struct Investigation {
     pub edges: Vec<Edge>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disassemblies: Vec<crate::pi32::DisassemblyReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ai_runs: Vec<crate::omp::AiRun>,
 }
 
 impl Investigation {
     pub fn validate(&self) -> Result<(), String> {
+        if let Some(artifact) = &self.artifact
+            && let Some(firmware) = &artifact.firmware
+        {
+            firmware.validate(artifact.length)?;
+        }
+        if self.ai_runs.len() > 16 {
+            return Err("Too many AI runs".into());
+        }
+        let mut ai_ids = HashSet::new();
+        for run in &self.ai_runs {
+            run.validate()?;
+            if !ai_ids.insert(&run.id) || !self.records.iter().any(|r| r.id == run.record) {
+                return Err("Invalid AI run identity or record".into());
+            }
+            if let Some(proposal) = &run.proposal {
+                if proposal.evidence.iter().any(|id| {
+                    !self.records.iter().any(|r| {
+                        r.id == *id
+                            && matches!(
+                                r.data,
+                                RecordData::Observation(_)
+                                    | RecordData::Firmware(_)
+                                    | RecordData::Disassembly(_)
+                            )
+                    })
+                }) {
+                    return Err("AI proposal has missing evidence".into());
+                }
+                let app = self
+                    .artifact
+                    .as_ref()
+                    .and_then(|a| a.firmware.as_ref())
+                    .and_then(|f| f.application.as_ref())
+                    .ok_or("AI proposal has no image")?;
+                if run.context["image_sha256"].as_str() != Some(&app.sha256)
+                    || run.context["image_length"].as_u64() != Some(u64::from(app.entry().length))
+                {
+                    return Err("AI proposal belongs to another image".into());
+                }
+            }
+        }
         if self.schema_version != SCHEMA_VERSION {
             return Err(format!(
                 "Unsupported investigation version: {}",
@@ -499,6 +542,7 @@ impl Investigation {
             origin: Origin::WorkshopFixture,
             artifact: None,
             disassemblies: Vec::new(),
+            ai_runs: Vec::new(),
             records,
             edges: vec![
                 Edge { from: RecordId(1), to: RecordId(2), relation: Relation::Investigates },

@@ -5,6 +5,7 @@ mod disassembly_records;
 pub mod domain;
 mod firmware_records;
 pub mod fwsc;
+pub mod omp;
 pub mod pi32;
 pub mod storage;
 pub mod tool_runner;

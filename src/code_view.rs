@@ -50,6 +50,10 @@ impl Default for CodeView {
 }
 
 impl CodeView {
+    pub fn stage(&mut self, offset: u64, length: u64) {
+        self.offset = format!("0x{offset:X}");
+        self.length = length;
+    }
     pub fn select_run(&mut self, report: &DisassemblyReport) {
         if self.selected_run != Some(report.id) {
             self.selected_run = Some(report.id);

@@ -19,9 +19,10 @@ The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 archite
 - A **Code** view runs the installed vendor pi32v2 disassembler on selected application bytes. It shows 2/4/6-byte instructions, original source offsets, a conservative basic-block graph, and instruction questions, explanations and next probes.
 - Each run retains its tool identity, version, flags, exact input, raw outputs, coverage and outcome. Unknown transfers and hardware loops remain unresolved. Cancellation, timeout and tool failure preserve partial output.
 - Notes, versioned investigation save/open, and replay without running tools.
+- **Model > OMP models and next step** discovers the installed OMP catalogue and proposes a source-linked next byte span. Review its why/how/outcome in Harness Insight, then stage the span in Code. Requests are cancellable; drafts and incomplete outcomes remain distinct from completed proposals.
 - A runnable Rust workshop example using synthetic bytes.
 
-**REA integration and OMP-driven investigation are not connected yet.** Package decoding and the vendor disassembler run locally. The built-in workshop is labeled synthetic; instruction explanations are deterministic descriptions of the retained evidence. The app does not execute or flash firmware.
+**REA integration and autonomous probe execution remain planned.** OMP now proposes the next step; the human stages and runs it. Package decoding and the vendor disassembler run locally. Instruction explanations are deterministic descriptions; OMP proposals are explicitly labeled model output. The app does not execute or flash firmware.
 
 ## Run
 
@@ -42,7 +43,23 @@ cargo run --locked -- --artifact /path/to/your/firmware.fwsc
 
 Artifact reads are limited to 128 MiB in this foundation build. Investigation JSON files are limited to 8 MiB, 200 records, 1,000 edges and 16 disassembly runs. Each run selects 2–4096 bytes and retains at most 256 KiB per output stream. Saves contain selected bytes, previews, raw tool output and the tool's local executable path; review them before sharing. Model credentials and the source artifact's local path are not stored.
 
-Investigation schema v4 adds image-qualified spans and attributable disassembly reports. Version 1–3 files still open; missing evidence remains absent. Reopening a report validates its recorded projections without running tools or rehashing the original file. **File > Verify source** reattaches freshly verified application bytes without replacing notes or records. Older builds cannot read v4 saves.
+Investigation schema v5 adds OMP snapshots, correlated event receipts and checked proposals to v4's image-qualified disassembly reports. Version 1–4 files still open; missing evidence remains absent. Reopening validates recorded results without running tools or rehashing the original file. **File > Verify source** reattaches freshly verified application bytes without replacing notes or records. Older builds cannot read v5 saves.
+
+## OMP next-step proposals
+
+Requires Bun and a separately installed OMP SDK **18.14.2**, the version whose isolation contract is checked here. The CLI may have another version; both are displayed. The bridge discovers the SDK under `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent`; `DIVULGE_OMP_SDK` overrides this directory and `DIVULGE_BUN` overrides the runtime executable. It does not install or upgrade OMP. Auth and the model catalogue come from OMP's existing configuration.
+
+Choose **Model > OMP models and next step > Connect / refresh models**. Keep the discovered default or filter/select another tool-capable model. **Propose next step** sends a bounded snapshot (objective, selected question/note, eight evidence summaries and at most two 80-row excerpts) to that model's provider. Expand the snapshot to review it first. An offline local server must be started separately or another model selected.
+
+The session exposes one read-only `read_evidence` tool with no filesystem access. MCP, LSP, IRC, extensions, rules, skills and context discovery are disabled. The active tool list is checked before any generation. Rust checks citations, integer offsets, alignment and bounds before recording a proposal. **Stage span in Code** fills the selection; it does not execute it. A new disassembly still requires freshly verified source bytes.
+
+Requests have a 90-second SDK deadline and a 100-second transport deadline with three seconds for cooperative cancellation. Output is capped at 1 MiB, a line at 256 KiB, and a session at 16 AI requests within the existing 8 MiB save limit. Saves include the exact supplied snapshot and model event transcript, including provisional text; review them before sharing. The global OMP default is never changed.
+
+A real model acceptance check uses synthetic teaching data (substitute a configured provider/model):
+
+```sh
+cargo run --locked --example omp_proposal -- --synthetic provider/model
+```
 
 For a local parser acceptance check without opening another window:
 

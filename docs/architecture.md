@@ -47,7 +47,9 @@ Retain REA's original records and `ev_` identities. DIVULGE observations have th
 
 Use a small Bun process around the installed OMP SDK. Reuse OMP's model catalogue and authentication; DIVULGE must not copy credentials or maintain its own provider catalogue. Discover capabilities and report the SDK/CLI versions instead of assuming they match.
 
-Prior local feasibility checks found that the CLI's `--no-tools` could still inherit ambient MCP tools. The bridge therefore requires an SDK session with explicit allowed tools, restricted tool names, MCP/LSP/IRC disabled, no discovered extensions, rules, skills, or context files, and an isolated session. A restricted, tool-free SDK session was feasible; model generation and the full bridge are still pending.
+The Bun bridge now creates an isolated SDK session with `read_evidence` as its sole active tool. The explicit allowlist, restricted custom tools, MCP/LSP/IRC disable flags and empty extensions/rules/skills/context are checked against SDK 18.14.2; other SDK versions fail clearly. A named in-memory session avoids automatic title generation. OMP owns credentials and model selection; DIVULGE stores only model metadata and its own evidence snapshot. No global default is changed.
+
+Protocol v1 uses request IDs and monotonic event sequence numbers for ready, draft, evidence-read, proposal, completion, error and cancellation. A ready acknowledgement cannot publish a proposal. Rust validates proposal text limits, cited supplied records and the even 2–4096-byte image span. Schema v5 saves the context hash, exact snapshot and transcript; altered projections are rejected on load. Completion appends a graph record without moving the reader's selection or camera. Staging is a separate user action; the bounded autonomous executor remains #8.
 
 Rust owns execution. The cycle is question -> proposed probe -> validated request -> actual observation -> evidence-linked explanation -> follow-up. Expose only explicit workbench operations. The initial proposed default is 12 probes per question, sequential, with reuse of identical evidence requests. Pause prevents new probes; Stop cancels current work. Correlate every response with session and run identity so stale results cannot affect a different investigation.
 
@@ -69,4 +71,4 @@ Custom FM-1 firmware source and SDK examples are reference material, not recover
 
 ## Foundation limits
 
-The current graph records and storage checks establish a starting point, not the complete qualified domain model. OMP, REA, the broader AI executor, full event sourcing and the PDF workshop remain tracked work. The vendor disassembly job supports cancellation; this does not implement the future AI executor. Menus for unimplemented operations explain their prerequisites and do not fabricate results.
+The current graph records and storage checks establish a starting point, not the complete qualified domain model. REA, the broader AI executor, full event sourcing and the PDF workshop remain tracked work. OMP currently proposes one step from a bounded snapshot; it cannot launch an analysis tool. Both model requests and vendor disassembly support cancellation. Menus for unimplemented operations explain their prerequisites and do not fabricate results.

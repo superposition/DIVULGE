@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai_view;
 mod app;
 mod code_view;
 mod data_view;

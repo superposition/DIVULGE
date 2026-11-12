@@ -54,6 +54,7 @@ pub struct DivulgeApp {
     generation: u64,
     attach_source: bool,
     close_after_job: bool,
+    ai: crate::ai_view::AiView,
     presenter: bool,
     filter: String,
     status: String,
@@ -97,6 +98,7 @@ impl DivulgeApp {
             generation: 0,
             attach_source: false,
             close_after_job: false,
+            ai: crate::ai_view::AiView::default(),
             presenter: false,
             filter: String::new(),
             status: "Workshop fixture ready. Select a node to inspect its evidence.".into(),
@@ -139,7 +141,7 @@ impl DivulgeApp {
     }
 
     fn request(&mut self, command: FileCommand) {
-        if self.artifact_worker.is_some() || self.code_job.is_some() {
+        if self.artifact_worker.is_some() || self.code_job.is_some() || self.ai.job.is_some() {
             self.status = "Finish or cancel the active job before changing files.".into();
             return;
         }
@@ -152,6 +154,7 @@ impl DivulgeApp {
     }
 
     fn replace(&mut self, session: Investigation, fresh: bool) {
+        self.ai.reset();
         self.generation = self.generation.wrapping_add(1);
         self.image = None;
         let config = self.code.config.clone();
@@ -317,7 +320,7 @@ impl DivulgeApp {
     }
 
     fn start_disassembly(&mut self, offset: u64, length: u64, ctx: &egui::Context) {
-        if self.code_job.is_some() || self.artifact_worker.is_some() {
+        if self.code_job.is_some() || self.artifact_worker.is_some() || self.ai.job.is_some() {
             return;
         }
         let Some(image) = self.image.clone() else {
@@ -536,12 +539,16 @@ impl DivulgeApp {
                     self.open_code();
                     ui.close();
                 }
-                ui.add_enabled(false, egui::Button::new("Run AI investigation"))
-                    .on_hover_text("Planned: the restricted OMP bridge and bounded tool executor.");
+                if ui.button("Propose next step with OMP...").clicked() {
+                    self.ai.open = true;
+                    ui.close();
+                }
             });
             ui.menu_button("Model", |ui| {
-                ui.label(RichText::new("OMP is not connected in this build").color(MUTED));
-                ui.label("The model catalogue will come from your OMP installation.");
+                if ui.button("OMP models and next step...").clicked() {
+                    self.ai.open = true;
+                    ui.close();
+                }
             });
             ui.menu_button("Help", |ui| {
                 if ui.button("Workshop guide").clicked() {
@@ -722,7 +729,9 @@ impl DivulgeApp {
                         .filter(|r| matches!(r.data, RecordData::Unknown { .. }))
                         .count()
                 ));
-                ui.label(RichText::new("Model: not connected").small().color(MUTED));
+                if ui.button("Ask OMP...").clicked() {
+                    self.ai.open = true;
+                }
                 ui.add_space(12.0);
                 if ui.button("Workshop guide").clicked() {
                     self.show_help = true;
@@ -902,13 +911,32 @@ impl DivulgeApp {
     }
 
     fn dialogs(&mut self, ctx: &egui::Context) {
+        let action = self.ai.show(
+            ctx,
+            &self.session,
+            self.attention.visible_count,
+            self.selected().id,
+            self.generation,
+            self.code_job.is_some() || self.artifact_worker.is_some(),
+        );
+        if let Some(index) = action.review {
+            self.attention.select(index);
+            self.show_code = false;
+            self.show_data = false;
+            self.graph
+                .focus_result(&self.session, index, self.attention.visible_count);
+        }
+        if let Some((offset, length)) = action.stage {
+            self.open_code();
+            self.code.stage(offset, length);
+        }
         egui::Window::new("About DIVULGE").open(&mut self.show_about).resizable(false).show(ctx, |ui| {
             ui.heading("DIVULGE 0.1.0");
             ui.label("An investigation workbench for understanding how we know.");
             ui.label("Native Rust + egui. MIT licensed project code.");
             ui.separator();
             ui.label("Foundation build: artifact identity, evidence graph, Harness Insight, notes, save/open, and replay.");
-            ui.label("V15 decoding and bounded pi32v2 disassembly are available. REA and OMP integration remain planned.");
+            ui.label("V15 decoding, bounded pi32v2 disassembly and OMP next-step proposals are available. REA and autonomous execution remain planned.");
             ui.label("Repository: github.com/superposition/DIVULGE");
         });
         egui::Window::new("Workshop / From bytes to evidence").open(&mut self.show_help).default_width(530.0).show(ctx, |ui| {
@@ -965,8 +993,26 @@ impl DivulgeApp {
 
 impl eframe::App for DivulgeApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.ai.poll(&mut self.session, self.generation) {
+            self.dirty = true;
+            self.attention.visible_count = self.session.records.len();
+            let reading_bounds = self.graph.bounds;
+            self.graph.reset(&self.session);
+            self.graph.bounds = reading_bounds;
+        }
+        if self.ai.job.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+        if self.close_after_job && self.ai.job.is_none() && self.code_job.is_none() {
+            self.close_after_job = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         if ctx.input(|input| input.viewport().close_requested()) {
-            if let Some(job) = &self.code_job {
+            if let Some(job) = &self.ai.job {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                job.cancel.store(true, Ordering::Relaxed);
+                self.close_after_job = true;
+            } else if let Some(job) = &self.code_job {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 job.cancel.store(true, Ordering::Relaxed);
                 self.close_after_job = true;
