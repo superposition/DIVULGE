@@ -14,6 +14,7 @@ pub fn inspect_artifact(path: &Path) -> Result<Artifact, String> {
 }
 
 pub struct Inspection {
+    pub path: std::path::PathBuf,
     pub artifact: Artifact,
     pub image: Option<crate::decoded_image::DecodedImage>,
 }
@@ -51,7 +52,11 @@ pub fn inspect_with_image(path: &Path) -> Result<Inspection, String> {
     } else {
         None
     };
-    Ok(Inspection { artifact, image })
+    Ok(Inspection {
+        path: path.to_path_buf(),
+        artifact,
+        image,
+    })
 }
 
 pub fn load(path: &Path) -> Result<Investigation, String> {
@@ -66,7 +71,7 @@ pub fn load(path: &Path) -> Result<Investigation, String> {
     let mut investigation: Investigation =
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
     // Older files have no decoded data. Do not invent results on migration.
-    if matches!(investigation.schema_version, 1..=4) {
+    if matches!(investigation.schema_version, 1..=5) {
         investigation.schema_version = SCHEMA_VERSION;
     }
     investigation.validate()?;

@@ -311,6 +311,9 @@ impl Inspector {
                         );
                     });
                 }
+                if let Some(run) = session.rea_runs.iter().find(|run| run.record == record.id) {
+                    crate::rea_view::receipt(ui, run);
+                }
                 if show_types {
                     ui.collapsing(mono("types / record schema", DIM), |ui| {
                         ui.add(

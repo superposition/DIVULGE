@@ -69,6 +69,20 @@ cargo run --locked --example inspect_firmware -- /path/to/FM-1_015.fwsc
 
 The V15 case produces 699,936 logical package bytes after removing 20 markers, eight entries, and a 581,564-byte application with verified CRC. The application starts at original file offset `0x4534`, flash offset `0x4120`, and declared address `0x02000120`. A declared address is static metadata. Four members have unexplained raw CRC differences; these remain unresolved instead of being labeled corrupt. The format, area offset, and SFC key are supplied by the [MIT reference implementation](THIRD_PARTY.md).
 
+## Read evidence with REA
+
+**Analysis > REA original-file evidence** detects the locally installed REA 6.8.0 package and exposes its read-only `inspect_byte_entropy` operation. Select a file offset, window length (at most 1 MiB), and power-of-two block size. This measures original file bytes, not decoded `app.bin` bytes or mapped memory. The full-file hash must match the current artifact. A reopened case requires **File > Verify original source** before another live read.
+
+The adapter uses an existing compatible Node runtime and REA package. On Windows it discovers the explicit Node/package paths in an installed `rea.cmd` launcher. Otherwise set `DIVULGE_REA_NODE` and `DIVULGE_REA_PACKAGE`, or enter those paths under **Installed REA / prerequisites**. It never installs, repairs, or executes the target. Other package versions fail with an actionable message; native desktop verification is Windows-only.
+
+REA's original `ev_` identity, provider, authority, locations, raw/normalized results and limitations stay intact. A `null` raw result or relationship coverage remains unavailable; an empty examined result remains empty. Canonical entropy bundles for the current artifact can be imported; other operation profiles and residual-unknown bundles are explicitly unsupported. Schema 6 stores the complete original bundle and its semantic commitments. Offline replay checks identities, scope and manifests in Rust and runs neither REA nor a model. Canonical bundle order is not a timeline: each receipt is appended at its DIVULGE application position.
+
+Requests have a 30-second deadline, two seconds for cooperative cancellation, a 2 MiB response cap and a 16-run limit. Incomplete output is diagnostic text, never completed evidence. Saved original bundles contain local paths; portable sharing is a separate export concern.
+
+```sh
+cargo run --locked --example rea_evidence -- /path/to/artifact 0 4096
+```
+
 ## Disassemble a selection
 
 On Windows, install the vendor pi32v2 tools and Python 3 in WSL. **Code > Tool / scope** selects the distribution (default `Ubuntu-22.04`) and executable. An empty executable field discovers only `~/.jieli/toolchain/pi32v2/bin/objdump` inside that distribution. The tools are supplied separately; there is no automatic download. The helper also supports a native Linux host, which has not had desktop validation.

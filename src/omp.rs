@@ -160,16 +160,11 @@ pub fn context(
         .records
         .iter()
         .take(visible)
-        .filter(|r| {
-            matches!(
-                r.data,
-                RecordData::Disassembly(_) | RecordData::Firmware(_) | RecordData::Observation(_)
-            )
-        })
+        .filter(|r| session.is_evidence(r))
         .rev()
         .take(8)
         .collect();
-    let evidence:Vec<_>=records.iter().map(|r|json!({"id":r.id.0,"title":r.title,"observation":r.insight.observation,"uncertainty":r.insight.uncertainty})).collect();
+    let evidence:Vec<_>=records.iter().map(|r|json!({"id":r.id.0,"title":r.title,"observation":r.insight.observation,"uncertainty":r.insight.uncertainty,"rea":session.rea_runs.iter().find(|run|run.record==r.id).and_then(|run|run.receipt.bundle().ok().flatten()).map(|bundle|bundle["records"].as_array().unwrap().iter().map(|e|json!({"evidence_id":e["evidence_id"],"provider":e["provider"],"authority":e["authority"],"file_window":e["normalized_result"]["window"],"file_entropy":e["normalized_result"]["file_entropy"],"limitations":e["limitations"]})).collect::<Vec<_>>())})).collect();
     let runs:Vec<_>=records.iter().filter_map(|r|if let RecordData::Disassembly(id)=r.data {session.disassemblies.iter().find(|run|run.id==id)}else{None}).take(2).map(|run|json!({"run":run.id.0,"scope":run.scope,"coverage":run.coverage,"instructions":run.instructions.iter().take(80).map(|i|json!({"address":i.address.0,"offset":i.span.offset.0,"width":i.width(),"text":i.text,"flow":i.flow})).collect::<Vec<_>>()})).collect();
     let attention=session.record(selected).map(|r|json!({"title":r.title,"question":r.insight.question,"analyst_note":r.note.chars().take(2000).collect::<String>()}));
     let value = json!({"objective":session.objective,"selected_record":selected.0,"attention":attention,"record_ids":records.iter().map(|r|r.id.0).collect::<Vec<_>>(),"evidence":evidence,"disassembly":runs,"image_length":report.entry().length,"mapped_base":report.mapped_base().0,"image_sha256":report.sha256,"limitations":"Static bounded evidence only. No runtime behavior or recovered function purpose established."});

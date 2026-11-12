@@ -6,6 +6,7 @@ mod code_view;
 mod data_view;
 mod graph;
 mod insight;
+mod rea_view;
 
 fn main() -> eframe::Result {
     let compact = std::env::args().any(|arg| arg == "--compact");

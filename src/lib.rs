@@ -7,5 +7,6 @@ mod firmware_records;
 pub mod fwsc;
 pub mod omp;
 pub mod pi32;
+pub mod rea;
 pub mod storage;
 pub mod tool_runner;

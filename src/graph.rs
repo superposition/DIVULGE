@@ -40,7 +40,10 @@ pub fn kind_color(data: &RecordData) -> Color32 {
     match data {
         RecordData::Question => Color32::from_rgb(138, 178, 239),
         RecordData::Probe { .. } => Color32::from_rgb(174, 158, 220),
-        RecordData::Observation(_) | RecordData::Firmware(_) | RecordData::Disassembly(_) => ACCENT,
+        RecordData::Observation(_)
+        | RecordData::Firmware(_)
+        | RecordData::Disassembly(_)
+        | RecordData::Rea(_) => ACCENT,
         RecordData::Explanation { .. } => Color32::from_rgb(218, 197, 133),
         RecordData::Unknown { .. } => Color32::from_rgb(225, 163, 117),
     }
@@ -315,22 +318,27 @@ impl GraphView {
                         FontId::monospace(10.0),
                         MUTED,
                     );
-                    let title = painter.layout(
+                    let mut title = egui::text::LayoutJob::simple(
                         record.title.clone(),
                         FontId::proportional(15.0),
                         TEXT,
                         NODE_SIZE.x - 28.0,
                     );
+                    title.wrap.max_rows = 1;
+                    let title = painter.layout_job(title);
                     painter.galley(rect.min + Vec2::new(14.0, 37.0), title, TEXT);
-                    let summary = painter.layout(
+                    let mut summary = egui::text::LayoutJob::simple(
                         record.summary.clone(),
                         FontId::proportional(11.0),
                         MUTED,
                         NODE_SIZE.x - 28.0,
                     );
+                    summary.wrap.max_rows = 2;
+                    let summary = painter.layout_job(summary);
                     painter.galley(rect.min + Vec2::new(14.0, 64.0), summary, MUTED);
                     response.on_hover_ui(|ui| {
                         ui.set_max_width(370.0);
+                        ui.strong(&record.title);
                         if let Some(question) = session.question_for(record.id) {
                             let plan = question.question_plan.as_ref().unwrap();
                             ui.strong(&question.insight.question);

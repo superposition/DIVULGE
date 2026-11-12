@@ -55,6 +55,8 @@ pub struct DivulgeApp {
     attach_source: bool,
     close_after_job: bool,
     ai: crate::ai_view::AiView,
+    rea: crate::rea_view::ReaView,
+    source_path: Option<PathBuf>,
     presenter: bool,
     filter: String,
     status: String,
@@ -99,6 +101,8 @@ impl DivulgeApp {
             attach_source: false,
             close_after_job: false,
             ai: crate::ai_view::AiView::default(),
+            rea: crate::rea_view::ReaView::default(),
+            source_path: None,
             presenter: false,
             filter: String::new(),
             status: "Workshop fixture ready. Select a node to inspect its evidence.".into(),
@@ -141,7 +145,11 @@ impl DivulgeApp {
     }
 
     fn request(&mut self, command: FileCommand) {
-        if self.artifact_worker.is_some() || self.code_job.is_some() || self.ai.job.is_some() {
+        if self.artifact_worker.is_some()
+            || self.code_job.is_some()
+            || self.ai.job.is_some()
+            || self.rea.job.is_some()
+        {
             self.status = "Finish or cancel the active job before changing files.".into();
             return;
         }
@@ -155,6 +163,8 @@ impl DivulgeApp {
 
     fn replace(&mut self, session: Investigation, fresh: bool) {
         self.ai.reset();
+        self.rea.reset();
+        self.source_path = None;
         self.generation = self.generation.wrapping_add(1);
         self.image = None;
         let config = self.code.config.clone();
@@ -320,7 +330,11 @@ impl DivulgeApp {
     }
 
     fn start_disassembly(&mut self, offset: u64, length: u64, ctx: &egui::Context) {
-        if self.code_job.is_some() || self.artifact_worker.is_some() || self.ai.job.is_some() {
+        if self.code_job.is_some()
+            || self.artifact_worker.is_some()
+            || self.ai.job.is_some()
+            || self.rea.job.is_some()
+        {
             return;
         }
         let Some(image) = self.image.clone() else {
@@ -537,6 +551,10 @@ impl DivulgeApp {
                     .clicked()
                 {
                     self.open_code();
+                    ui.close();
+                }
+                if ui.button("REA original-file evidence...").clicked() {
+                    self.rea.open = true;
                     ui.close();
                 }
                 if ui.button("Propose next step with OMP...").clicked() {
@@ -911,13 +929,26 @@ impl DivulgeApp {
     }
 
     fn dialogs(&mut self, ctx: &egui::Context) {
+        if let Some(index) = self.rea.show(
+            ctx,
+            &self.session,
+            self.source_path.as_deref(),
+            self.generation,
+            self.code_job.is_some() || self.artifact_worker.is_some() || self.ai.job.is_some(),
+        ) {
+            self.attention.select(index);
+            self.show_code = false;
+            self.show_data = false;
+            self.graph
+                .focus_result(&self.session, index, self.attention.visible_count);
+        }
         let action = self.ai.show(
             ctx,
             &self.session,
             self.attention.visible_count,
             self.selected().id,
             self.generation,
-            self.code_job.is_some() || self.artifact_worker.is_some(),
+            self.code_job.is_some() || self.artifact_worker.is_some() || self.rea.job.is_some(),
         );
         if let Some(index) = action.review {
             self.attention.select(index);
@@ -936,7 +967,7 @@ impl DivulgeApp {
             ui.label("Native Rust + egui. MIT licensed project code.");
             ui.separator();
             ui.label("Foundation build: artifact identity, evidence graph, Harness Insight, notes, save/open, and replay.");
-            ui.label("V15 decoding, bounded pi32v2 disassembly and OMP next-step proposals are available. REA and autonomous execution remain planned.");
+            ui.label("V15 decoding, bounded pi32v2 disassembly and OMP next-step proposals are available. REA entropy evidence is available; autonomous execution remains planned.");
             ui.label("Repository: github.com/superposition/DIVULGE");
         });
         egui::Window::new("Workshop / From bytes to evidence").open(&mut self.show_help).default_width(530.0).show(ctx, |ui| {
@@ -993,6 +1024,16 @@ impl DivulgeApp {
 
 impl eframe::App for DivulgeApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.rea.poll(&mut self.session, self.generation) {
+            self.dirty = true;
+            self.attention.visible_count = self.session.records.len();
+            let bounds = self.graph.bounds;
+            self.graph.reset(&self.session);
+            self.graph.bounds = bounds;
+        }
+        if self.rea.job.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
         if self.ai.poll(&mut self.session, self.generation) {
             self.dirty = true;
             self.attention.visible_count = self.session.records.len();
@@ -1003,12 +1044,20 @@ impl eframe::App for DivulgeApp {
         if self.ai.job.is_some() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
-        if self.close_after_job && self.ai.job.is_none() && self.code_job.is_none() {
+        if self.close_after_job
+            && self.ai.job.is_none()
+            && self.code_job.is_none()
+            && self.rea.job.is_none()
+        {
             self.close_after_job = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if ctx.input(|input| input.viewport().close_requested()) {
-            if let Some(job) = &self.ai.job {
+            if let Some(job) = &self.rea.job {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                job.cancel.store(true, Ordering::Relaxed);
+                self.close_after_job = true;
+            } else if let Some(job) = &self.ai.job {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 job.cancel.store(true, Ordering::Relaxed);
                 self.close_after_job = true;
@@ -1112,9 +1161,17 @@ impl eframe::App for DivulgeApp {
                                                         == u64::from(app.entry().length)
                                             })
                                     });
+                                let image_matches = image_matches
+                                    || (self
+                                        .session
+                                        .artifact
+                                        .as_ref()
+                                        .is_some_and(|a| a.firmware.is_none())
+                                        && inspection.image.is_none());
                                 if matches && image_matches {
                                     self.image = inspection.image.map(Arc::new);
                                     self.imported_fresh = true;
+                                    self.source_path = Some(inspection.path);
                                     self.status = "Original file and decoded image verified. This investigation is ready for a new bounded run.".into();
                                 } else {
                                     self.error = Some("The selected source or decoded image does not match this saved investigation. Its existing records were retained.".into());
@@ -1125,6 +1182,7 @@ impl eframe::App for DivulgeApp {
                                     true,
                                 );
                                 self.image = inspection.image.map(Arc::new);
+                                self.source_path = Some(inspection.path);
                                 self.dirty = true;
                                 self.status = if self.show_data {
                                     "V15 package decoded. Open Code to disassemble a selected application span.".into()

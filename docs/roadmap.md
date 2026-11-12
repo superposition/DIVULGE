@@ -27,7 +27,7 @@ The first delivery is a native, reviewable foundation. The full AI-driven firmwa
 | [#13](https://github.com/superposition/DIVULGE/issues/13) | Reproducible, visually verified workshop PDF | #12, stable UI |
 | [#14](https://github.com/superposition/DIVULGE/issues/14) | Native release and FM-1 talk rehearsal | Harness milestone, #13 |
 
-The exact-V15 reader (#3/#4), vendor disassembly (#5) and restricted OMP next-step proposals (#7) are implemented. Essential image identities and checked spans are present; #2 remains open for the broader evidence model. Next, add REA evidence operations (#6) and the bounded executor (#8) so a checked proposal can become an attributable tool run. The synthetic Rust workshop remains available alongside the real V15 case study.
+The exact-V15 reader (#3/#4), vendor disassembly (#5), REA entropy evidence (#6), and restricted OMP next-step proposals (#7) are implemented. Essential image identities and checked spans are present; #2 remains open for the broader evidence model. Next, implement the bounded executor (#8) so a checked proposal can become an attributable tool run. The synthetic Rust workshop remains available alongside the real V15 case study.
 
 ## Delivery rule
 

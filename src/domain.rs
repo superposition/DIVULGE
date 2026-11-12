@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 pub const V15_SHA256: &str = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a";
 pub const V15_LENGTH: u64 = 699_956;
 
@@ -48,6 +48,7 @@ pub enum RecordData {
     Observation(Observation),
     Firmware(crate::fwsc::FirmwareView),
     Disassembly(crate::pi32::RunId),
+    Rea(String),
     Explanation {
         basis: Basis,
         evidence: Vec<RecordId>,
@@ -65,6 +66,7 @@ impl RecordData {
             Self::Observation(_) => "Observation",
             Self::Firmware(_) => "Decoded data",
             Self::Disassembly(_) => "Instructions",
+            Self::Rea(_) => "REA evidence",
             Self::Explanation { .. } => "Explanation",
             Self::Unknown { .. } => "Unknown",
         }
@@ -75,6 +77,9 @@ impl RecordData {
             Self::Question => "RecordData::Question",
             Self::Probe { .. } => "RecordData::Probe { operation: String }",
             Self::Observation(_) => "Observation { offset: FileOffset, bytes: Vec<u8>, .. }",
+            Self::Rea(_) => {
+                "ReaRun { request: Request, receipt: Receipt }; original REA ev_ IDs remain distinct from DIVULGE RecordId"
+            }
             Self::Disassembly(_) => {
                 "DisassemblyReport { id: RunId, scope: ImageSpan, instructions: Vec<Instruction>, coverage: Coverage, .. }"
             }
@@ -192,10 +197,37 @@ pub struct Investigation {
     pub disassemblies: Vec<crate::pi32::DisassemblyReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ai_runs: Vec<crate::omp::AiRun>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rea_runs: Vec<crate::rea::ReaRun>,
 }
 
 impl Investigation {
     pub fn validate(&self) -> Result<(), String> {
+        if self.rea_runs.len() > 16 {
+            return Err("Too many REA runs".into());
+        }
+        let mut rea_ids = HashSet::new();
+        for run in &self.rea_runs {
+            run.validate(self.artifact.as_ref().ok_or("REA run has no artifact")?)?;
+            if !rea_ids.insert(&run.receipt.id)
+                || !self.records.iter().any(|r| {
+                    r.id == run.record
+                        && matches!(&r.data,RecordData::Rea(id) if id==&run.receipt.id)
+                })
+            {
+                return Err("REA run/record identity mismatch".into());
+            }
+        }
+        for record in &self.records {
+            if let RecordData::Rea(id) = &record.data
+                && !self
+                    .rea_runs
+                    .iter()
+                    .any(|r| &r.receipt.id == id && r.record == record.id)
+            {
+                return Err("Missing REA run".into());
+            }
+        }
         if let Some(artifact) = &self.artifact
             && let Some(firmware) = &artifact.firmware
         {
@@ -212,15 +244,10 @@ impl Investigation {
             }
             if let Some(proposal) = &run.proposal {
                 if proposal.evidence.iter().any(|id| {
-                    !self.records.iter().any(|r| {
-                        r.id == *id
-                            && matches!(
-                                r.data,
-                                RecordData::Observation(_)
-                                    | RecordData::Firmware(_)
-                                    | RecordData::Disassembly(_)
-                            )
-                    })
+                    !self
+                        .records
+                        .iter()
+                        .any(|r| r.id == *id && self.is_evidence(r))
                 }) {
                     return Err("AI proposal has missing evidence".into());
                 }
@@ -351,15 +378,11 @@ impl Investigation {
                     return Err("An explanation must cite an observation".into());
                 }
                 for id in evidence {
-                    if !self.records.iter().any(|candidate| {
-                        candidate.id == *id
-                            && matches!(
-                                candidate.data,
-                                RecordData::Observation(_)
-                                    | RecordData::Firmware(_)
-                                    | RecordData::Disassembly(_)
-                            )
-                    }) {
+                    if !self
+                        .records
+                        .iter()
+                        .any(|candidate| candidate.id == *id && self.is_evidence(candidate))
+                    {
                         return Err("Explanation references a missing observation".into());
                     }
                 }
@@ -394,6 +417,14 @@ impl Investigation {
 
     pub fn record(&self, id: RecordId) -> Option<&Record> {
         self.records.iter().find(|record| record.id == id)
+    }
+
+    /// The presence of a failed tool request does not make it evidence.
+    pub fn is_evidence(&self, record: &Record) -> bool {
+        matches!(
+            record.data,
+            RecordData::Observation(_) | RecordData::Firmware(_) | RecordData::Disassembly(_)
+        ) || matches!(&record.data,RecordData::Rea(id) if self.rea_runs.iter().any(|run|&run.receipt.id==id&&run.receipt.kind=="completed"))
     }
 
     pub fn question_for(&self, id: RecordId) -> Option<&Record> {
@@ -543,6 +574,7 @@ impl Investigation {
             artifact: None,
             disassemblies: Vec::new(),
             ai_runs: Vec::new(),
+            rea_runs: Vec::new(),
             records,
             edges: vec![
                 Edge { from: RecordId(1), to: RecordId(2), relation: Relation::Investigates },
