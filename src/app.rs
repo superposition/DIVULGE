@@ -31,6 +31,7 @@ pub struct DivulgeApp {
     show_about: bool,
     show_help: bool,
     show_activity: bool,
+    show_data: bool,
     presenter: bool,
     filter: String,
     status: String,
@@ -66,6 +67,7 @@ impl DivulgeApp {
             show_about: false,
             show_help: false,
             show_activity: false,
+            show_data: false,
             presenter: false,
             filter: String::new(),
             status: "Workshop fixture ready. Select a node to inspect its evidence.".into(),
@@ -111,6 +113,21 @@ impl DivulgeApp {
         self.session = session;
         self.attention = Attention::all(self.session.records.len());
         self.attention.select(3.min(self.session.records.len() - 1));
+        self.show_data = self
+            .session
+            .artifact
+            .as_ref()
+            .is_some_and(|a| a.firmware.is_some());
+        if self.show_data
+            && let Some(index) = self.session.records.iter().position(|r| {
+                matches!(
+                    r.data,
+                    RecordData::Firmware(divulge::fwsc::FirmwareView::Application)
+                )
+            })
+        {
+            self.attention.select(index);
+        }
         self.graph.reset(&self.session);
         self.playing = false;
         self.save_path = None;
@@ -124,7 +141,8 @@ impl DivulgeApp {
         let ctx = ctx.clone();
         self.playing = false;
         self.artifact_worker = Some(receive);
-        self.status = "Reading the selected file and calculating SHA-256...".into();
+        self.status =
+            "Reading and hashing the file; decoding if the exact V15 identity matches...".into();
         std::thread::spawn(move || {
             let _ = send.send(storage::inspect_artifact(&path));
             ctx.request_repaint();
@@ -244,7 +262,7 @@ impl DivulgeApp {
             });
             ui.menu_button("Analysis", |ui| {
                 if ui.button("Identify local artifact...").clicked() { self.request(FileCommand::OpenArtifact); ui.close(); }
-                ui.add_enabled(false, egui::Button::new("Decode FWSC package")).on_hover_text("Planned: a checked parser and exact V15 identity gate.");
+                if ui.add_enabled(self.session.artifact.as_ref().is_some_and(|a| a.firmware.is_some()), egui::Button::new("Show decoded V15 data")).on_hover_text("The exact V15 package is decoded automatically on import.").clicked() { self.show_data = true; ui.close(); }
                 ui.add_enabled(false, egui::Button::new("Disassemble pi32v2")).on_hover_text("Planned: an explicit vendor tool adapter with validated instruction semantics.");
                 ui.add_enabled(false, egui::Button::new("Run AI investigation")).on_hover_text("Planned: the restricted OMP bridge and bounded tool executor.");
             });
@@ -455,6 +473,37 @@ impl DivulgeApp {
 
     fn center(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            if ui
+                .selectable_value(&mut self.show_data, false, "Graph")
+                .clicked()
+            {
+                self.graph.focus_result(
+                    &self.session,
+                    self.attention.selected_index,
+                    self.attention.visible_count,
+                );
+            }
+            ui.selectable_value(&mut self.show_data, true, "Data");
+            ui.label(
+                RichText::new("Shared selection / click a result to inspect it")
+                    .small()
+                    .color(MUTED),
+            );
+        });
+        ui.separator();
+        ui.add_space(8.0);
+        if self.show_data {
+            if let Some(index) = crate::data_view::table(
+                ui,
+                &self.session,
+                self.attention.visible_count,
+                self.attention.selected_index,
+            ) {
+                self.attention.select(index);
+            }
+            return;
+        }
+        ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.label(RichText::new("Investigation graph").size(19.0).strong());
                 ui.label(
@@ -466,6 +515,9 @@ impl DivulgeApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Fit all").clicked() {
                     self.graph.fit();
+                }
+                if ui.button("Focus result").clicked() {
+                    self.graph.focus_result(&self.session, self.attention.selected_index, self.attention.visible_count);
                 }
                 if ui.add_enabled(self.session.question_for(self.selected().id).is_some(), egui::Button::new("Focus question"))
                     .on_hover_text("Zoom to the question and its next probe; open why, how, and what the answer enables.")
@@ -589,10 +641,13 @@ impl eframe::App for DivulgeApp {
                         Ok(artifact) => {
                             self.replace(Investigation::from_artifact(artifact), true);
                             self.dirty = true;
-                            self.status = "Artifact identity recorded. Select its observation to inspect the bytes.".into();
-                            self.activity.push(
-                                "Completed local file hashing and bounded byte preview.".into(),
-                            );
+                            self.status = if self.show_data {
+                                "V15 package decoded. Select a data row or graph record to inspect its fields, bytes and addresses.".into()
+                            } else {
+                                "Artifact identity recorded. Select its observation to inspect the bytes.".into()
+                            };
+                            self.activity.push(if self.show_data { "Completed exact V15 identity check, FWSC directory decode and application checks. Results are recorded; no model or target execution was invoked.".into() }
+                                else { "Completed local file hashing and bounded byte preview.".into() });
                         }
                         Err(error) => {
                             self.error = Some(error);

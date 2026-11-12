@@ -14,10 +14,12 @@ The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 archite
 - Saved question plans explain why a question matters, how to investigate it, what its answer enables, and what evidence is sufficient. **Focus question** or a double-click zooms to the question and its next probe; **Fit all** restores the overview.
 - Independent reading position and replay frontier, with Review next and Follow latest.
 - Local artifact hashing, bounded byte previews, and comparison with the configured V15 identity.
+- Exact-V15 FWSC decoding: eight package entries, header and directory CRCs, raw member CRC comparisons, SFC/JLFS application decoding, and source mappings back to the original file.
+- A compact **Data** view shares selection with **Graph**. Inspect field locations and Rust types, sizes, hashes, raw/decoded bytes, flash offsets, and the application's declared address. **Focus result** frames a record and its immediate evidence relationships.
 - Notes, versioned investigation save/open, and replay without running tools.
 - A runnable Rust workshop example using synthetic bytes.
 
-**REA analysis, firmware decoding, and OMP-driven investigation are not connected yet.** The built-in workshop is labeled synthetic; it does not present simulated model output as real analysis. The app does not execute or flash firmware.
+**pi32v2 disassembly, REA integration, and OMP-driven investigation are not connected yet.** Package decoding runs locally and deterministically. The built-in workshop is labeled synthetic; it does not present simulated model output as real analysis. The app does not execute or flash firmware.
 
 ## Run
 
@@ -38,7 +40,15 @@ cargo run --locked -- --artifact /path/to/your/firmware.fwsc
 
 Artifact reads are limited to 128 MiB in this foundation build. Investigation JSON files are limited to 8 MiB, 200 records, and 1,000 edges while larger-graph work is pending. Saved investigations include a bounded byte preview; inspect their contents before choosing to share them. Machine-specific source paths and model credentials are not stored in them.
 
-Investigation schema v2 preserves question plans and explicit question ownership. Version 1 files still open; missing question context remains explicitly absent rather than being invented during import. Older application builds cannot read v2 saves.
+Investigation schema v3 preserves question plans, ownership links, and structured firmware results with bounded previews. Version 1 and 2 files still open; missing plans and decoded results remain absent. Reopening a recorded report does not rehash or revalidate its original file. Older builds cannot read v3 saves.
+
+For a local parser acceptance check without opening another window:
+
+```sh
+cargo run --locked --example inspect_firmware -- /path/to/FM-1_015.fwsc
+```
+
+The V15 case produces 699,936 logical package bytes after removing 20 markers, eight entries, and a 581,564-byte application with verified CRC. The application starts at original file offset `0x4534`, flash offset `0x4120`, and declared address `0x02000120`. A declared address is static metadata. Four members have unexplained raw CRC differences; these remain unresolved instead of being labeled corrupt. The format, area offset, and SFC key are supplied by the [MIT reference implementation](THIRD_PARTY.md).
 
 ## Workshop
 

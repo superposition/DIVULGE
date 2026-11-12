@@ -1,6 +1,7 @@
 //! Terminal-style evidence inspection. Scalar views are interpretations, not recovered types.
+use crate::data_view::ByteView;
 use crate::graph::{ACCENT, kind_color};
-use divulge::domain::{Investigation, Observation, Origin, QuestionPlan, RecordData, RecordId};
+use divulge::domain::{Investigation, Origin, QuestionPlan, RecordData, RecordId};
 use eframe::egui::{self, Color32, FontId, RichText};
 
 pub const SURFACE: Color32 = Color32::from_rgb(10, 15, 18);
@@ -41,6 +42,16 @@ impl Inspector {
         let question = session.question_for(record.id).cloned();
         let owns_question = question.as_ref().is_some_and(|q| q.id == record.id);
         let mut response = Response::default();
+        let firmware_view = match &record.data {
+            RecordData::Firmware(view) => Some(*view),
+            RecordData::Explanation { evidence, .. } => evidence.iter().find_map(|id| {
+                session.record(*id).and_then(|source| match source.data {
+                    RecordData::Firmware(view) => Some(view),
+                    _ => None,
+                })
+            }),
+            _ => None,
+        };
         let observation = match &record.data {
             RecordData::Observation(bytes) => Some((record.id, bytes.clone())),
             RecordData::Explanation { evidence, .. } => evidence.iter().find_map(|id| {
@@ -180,8 +191,28 @@ impl Inspector {
                 }
                 ui.add_space(9.0);
 
-                if let Some((source_id, bytes)) = &observation {
-                    self.bytes(ui, *source_id, bytes);
+                if let Some(view) = firmware_view
+                    && let Some(report) =
+                        session.artifact.as_ref().and_then(|a| a.firmware.as_ref())
+                {
+                    crate::data_view::fields(ui, report, view);
+                    self.bytes(ui, record.id, &crate::data_view::bytes(report, view));
+                } else if let Some((source_id, bytes)) = &observation {
+                    self.bytes(
+                        ui,
+                        *source_id,
+                        &ByteView {
+                            bytes: &bytes.bytes,
+                            offset: bytes.offset.0,
+                            space: "file",
+                            source: vec![divulge::fwsc::SourceSpan {
+                                offset: bytes.offset,
+                                length: bytes.bytes.len() as u64,
+                            }],
+                            mapped: None,
+                            transform: "identity / raw bytes / no instructions decoded",
+                        },
+                    );
                 } else {
                     ui.label(mono("[bytes] no observation attached to this record", DIM));
                 }
@@ -253,7 +284,7 @@ impl Inspector {
         response
     }
 
-    fn bytes(&mut self, ui: &mut egui::Ui, id: RecordId, observation: &Observation) {
+    fn bytes(&mut self, ui: &mut egui::Ui, id: RecordId, observation: &ByteView<'_>) {
         if self.byte_record != Some(id) {
             self.byte_record = Some(id);
             self.byte_index = 0;
@@ -264,15 +295,29 @@ impl Inspector {
         ui.label(mono(format!("[bytes / evidence #{:04}]", id.0), ACCENT));
         line(
             ui,
-            "file",
+            observation.space,
             &format!(
                 "0x{:08X}..0x{:08X} (end exclusive)",
-                observation.offset.0,
-                observation.offset.0 + observation.bytes.len() as u64
+                observation.offset,
+                observation.offset + observation.bytes.len() as u64
             ),
         );
-        line(ui, "mapped", "unresolved / no load map");
-        line(ui, "decode", "raw bytes / no instructions decoded");
+        for source in &observation.source {
+            line(
+                ui,
+                "source",
+                &format!("file+0x{:08X} / {} B", source.offset.0, source.length),
+            );
+        }
+        line(
+            ui,
+            "mapped",
+            &observation.mapped.map_or_else(
+                || "unresolved / no load map".into(),
+                |base| format!("0x{base:08X} / declared, not runtime-observed"),
+            ),
+        );
+        line(ui, "decode", observation.transform);
         ui.add_space(8.0);
         ui.label(mono("OFFSET    HEX                      ASCII", DIM).size(11.0));
         egui::ScrollArea::vertical()
@@ -284,7 +329,7 @@ impl Inspector {
                 ui.spacing_mut().button_padding = egui::vec2(1.0, 1.0);
                 for (row, chunk) in observation.bytes.chunks(8).enumerate() {
                     ui.horizontal(|ui| {
-                        let offset = observation.offset.0 + row as u64 * 8;
+                        let offset = observation.offset + row as u64 * 8;
                         ui.label(mono(format!("{offset:08X}"), DIM).size(11.0));
                         ui.add_space(4.0);
                         for column in 0..8 {
@@ -305,8 +350,9 @@ impl Inspector {
                                         .frame(selected),
                                     )
                                     .on_hover_text(format!(
-                                        "File offset 0x{:08X} / u8 {}",
-                                        observation.offset.0 + index as u64,
+                                        "{} offset 0x{:08X} / u8 {}",
+                                        observation.space,
+                                        observation.offset + index as u64,
                                         byte
                                     ))
                                     .clicked()
@@ -337,21 +383,31 @@ impl Inspector {
             ui.label(mono("[empty] no bytes returned", DIM));
             return;
         }
-        let offset = observation.offset.0 + self.byte_index as u64;
+        let offset = observation.offset + self.byte_index as u64;
         let byte = observation.bytes[self.byte_index];
-        ui.label(mono(format!("@ file+0x{offset:08X}"), ACCENT));
+        ui.label(mono(
+            format!("@ {}+0x{offset:08X}", observation.space),
+            ACCENT,
+        ));
+        if let Some(base) = observation.mapped {
+            line(
+                ui,
+                "declared",
+                &format!("0x{:08X}", base + self.byte_index as u64),
+            );
+        }
         ui.horizontal(|ui| {
             ui.label(mono("interpret as", DIM));
             ui.selectable_value(&mut self.byte_order, ByteOrder::Little, "little endian");
             ui.selectable_value(&mut self.byte_order, ByteOrder::Big, "big endian");
         });
         let u16_value =
-            window::<2>(&observation.bytes, self.byte_index).map(|bytes| match self.byte_order {
+            window::<2>(observation.bytes, self.byte_index).map(|bytes| match self.byte_order {
                 ByteOrder::Little => u16::from_le_bytes(bytes),
                 ByteOrder::Big => u16::from_be_bytes(bytes),
             });
         let u32_value =
-            window::<4>(&observation.bytes, self.byte_index).map(|bytes| match self.byte_order {
+            window::<4>(observation.bytes, self.byte_index).map(|bytes| match self.byte_order {
                 ByteOrder::Little => u32::from_le_bytes(bytes),
                 ByteOrder::Big => u32::from_be_bytes(bytes),
             });

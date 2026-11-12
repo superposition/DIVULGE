@@ -8,7 +8,7 @@ The initial learning case is an exact official FM-1 V15 artifact. This remains a
 
 ## Desktop layout
 
-Use egui's menu, panel, scrolling, scene, and widget primitives. A narrow investigation tree sits beside a dominant graph. A resizable right panel holds Harness Insight. Raw activity is available in a collapsed lower panel. Dense controls and readable evidence take precedence over dashboard decoration.
+Use egui's menu, panel, scrolling, scene, grid, and widget primitives. A narrow investigation tree sits beside Graph and Data views with shared selection. A resizable terminal-style right panel holds Harness Insight. Data shows package and application directory tables; Graph shows the questions and evidence relationships. Raw activity is available in a collapsed lower panel.
 
 Narrative is the default graph projection. Relationships uses a force-directed layout. Positions are presentation data; moving a node never changes an evidence relationship. Layout settles before reading rather than continuously moving completed nodes. Future large-graph work needs scoping, virtualization, pinning, and coverage indicators.
 
@@ -16,7 +16,7 @@ Each node offers a short label and summary. Harness Insight supplies the questio
 
 Questions also carry a persisted `QuestionPlan`: why the question matters, a bounded sequence of investigation steps, the decision its answer enables, sufficient-evidence criteria, and the alternative path if the check fails. Probe, observation, and explanation records explicitly identify their owning question. A support edge alone does not establish that ownership. Selecting a question puts its plan ahead of raw data; evidence records keep the question context expandable. Focus question and graph double-click explicitly zoom the camera; normal selection does not move it. Related-response links respect the replay frontier.
 
-Schema v2 adds these plans and ownership links. Version 1 files migrate without fabricating missing plans. Validate question targets and required plan fields when loading; planning text is not proof that its criterion has been met.
+Schema v2 added plans and ownership links; v3 adds typed firmware reports and record views into them. Version 1/2 files migrate without fabricating missing plans or data. Validate question targets, firmware-view references, byte ranges, and required plan fields when loading. A saved DTO is recorded evidence, not a freshly verified artifact.
 
 ## Attention and execution
 
@@ -31,13 +31,13 @@ The foundation implements this with recorded replay. The live executor must pres
 3. Adapters: REA, the vendor pi32v2 tool, and a restricted OMP SDK bridge.
 4. Presentation: menus, panels, graph projections, attention cursor, and readable summaries.
 
-The foundation currently has `domain`, `storage`, `app`, and `graph` modules in one crate. Split into workspace crates when the executor and adapters warrant it; avoid packaging complexity before the boundary is useful.
+The crate separates `domain`, `storage`, `fwsc`, `firmware_records`, `app`, `graph`, `data_view`, and `insight`. The parser and records do not depend on egui. Split into workspace crates when the executor and adapters warrant it.
 
 ## Type-driven design
 
-`RecordId` is stable across layout and replay. `FileOffset` and `MappedAddress` are distinct coordinates. Rust validation does not establish the truth of a claim: a valid evidence link is necessary but not sufficient for a sound explanation.
+`RecordId` is stable across layout and replay. `FileOffset`, `PackageOffset`, `FlashOffset`, and `MappedAddress` are distinct coordinates. `PackageHeader`, `PackageEntry`, `DirectoryEntry`, `Application`, and `CrcCheck` retain parsed values. `FirmwareView` connects a graph record to these typed results without duplicating the report. Rust validation does not establish the truth of a claim: a valid evidence link is necessary but not sufficient for a sound explanation.
 
-The next domain milestone adds checked `Span<Space>` constructors, artifact/image identity, fragmented source maps, load maps, and qualified states such as `MatchedV15` and `MappedImage<Pi32v2>`. Loading a saved DTO must not manufacture a fresh verified artifact. Only actual checks can construct qualified states.
+The V15 reader checks ranges and constructs fragmented original-file spans across the 20 marker boundaries. It retains raw/decoded header bytes, payload previews, full-payload hashes and CRC comparisons. A general `Span<Space>` model, image identities, arbitrary load maps and qualified states such as `MappedImage<Pi32v2>` remain the next domain milestone. Loading a saved DTO must not manufacture a fresh verified artifact.
 
 Represent missing information explicitly. `Option` is absence, `Result` is an operation's success or failure, and analysis coverage is a separate complete/partial/unavailable outcome. Ambiguous or unresolved destinations stay unresolved. Parsed declared fields, selected-byte scalar interpretations, and inferred types have distinct provenance. Preserve floating-point bits in serialized scalar views.
 
@@ -57,7 +57,7 @@ Harness memory includes objective, target identity, established observations, su
 
 The configured identity reference is 699,956 bytes and SHA-256 `db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a`. A matching name is insufficient. Hash comparison identifies the reference; it does not prove package integrity, runtime behavior, or an original source type.
 
-The parser milestone covers FWSC marker removal, decoded header and entries, type-specific checksums, flash extraction, SFC transformation, and application directory records. Every derived byte needs a source map. Reference-supplied keys must remain labeled as reference inputs.
+The read-only parser now removes FWSC markers, decodes header/entry records, checks header and encrypted-directory CRCs, compares raw member CRCs, extracts flash in memory, applies the reference SFC transform, and validates JLFS headers and the application payload. Four member checksum transforms remain unresolved. Every displayed byte maps back to original-file source spans. The area offset `0x4000` and key `0x980F` are reference inputs, not independently recovered facts. The application header declares `0x02000120`; it is not a runtime observation. Full decoded payloads are hashed during the import worker, with bounded previews retained in the session.
 
 The locally inspected REA raw architecture catalogue did not include pi32v2. The installed vendor disassembler is LLVM-based; the REA GNU objdump adapter is not a drop-in interface for it. Use a separate adapter. Preserve 2-, 4-, and 6-byte instructions, undecodable regions, raw output, hardware-loop continuation lines, and tool context. Validate branch/call displacement semantics with known-label fixtures before drawing resolved edges. Static disassembly is not observed execution.
 
@@ -65,4 +65,4 @@ Custom FM-1 firmware source and SDK examples are reference material, not recover
 
 ## Foundation limits
 
-The current graph records and storage checks establish a starting point, not the complete qualified domain model. OMP, REA, package decoding, execution cancellation, full event sourcing, and the PDF workshop remain tracked work. Menus for unimplemented operations explain their prerequisites and do not fabricate results.
+The current graph records and storage checks establish a starting point, not the complete qualified domain model. OMP, REA, pi32v2 disassembly, execution cancellation, full event sourcing, and the PDF workshop remain tracked work. Menus for unimplemented operations explain their prerequisites and do not fabricate results.

@@ -40,7 +40,7 @@ pub fn kind_color(data: &RecordData) -> Color32 {
     match data {
         RecordData::Question => Color32::from_rgb(138, 178, 239),
         RecordData::Probe { .. } => Color32::from_rgb(174, 158, 220),
-        RecordData::Observation(_) => ACCENT,
+        RecordData::Observation(_) | RecordData::Firmware(_) => ACCENT,
         RecordData::Explanation { .. } => Color32::from_rgb(218, 197, 133),
         RecordData::Unknown { .. } => Color32::from_rgb(225, 163, 117),
     }
@@ -49,9 +49,25 @@ pub fn kind_color(data: &RecordData) -> Color32 {
 impl GraphView {
     pub fn reset(&mut self, session: &Investigation) {
         self.positions = (0..session.records.len())
-            .map(|i| match i {
-                0..=3 => Pos2::new(0.0, i as f32 * 136.0),
-                _ => Pos2::new(302.0, (i as f32 - 1.0) * 136.0),
+            .map(|i| {
+                if session.records.len() > 8 {
+                    match &session.records[i].data {
+                        RecordData::Firmware(divulge::fwsc::FirmwareView::Entry(index)) => {
+                            Pos2::new(1280.0, *index as f32 * 136.0)
+                        }
+                        RecordData::Firmware(divulge::fwsc::FirmwareView::Application) => {
+                            Pos2::new(1600.0, 0.0)
+                        }
+                        RecordData::Unknown { .. } => Pos2::new(1600.0, 136.0),
+                        _ if i < 4 => Pos2::new(0.0, i as f32 * 136.0),
+                        _ => Pos2::new(320.0 + (i - 4) as f32 * 320.0, 408.0),
+                    }
+                } else {
+                    match i {
+                        0..=3 => Pos2::new(0.0, i as f32 * 136.0),
+                        _ => Pos2::new(302.0, (i as f32 - 1.0) * 136.0),
+                    }
+                }
             })
             .collect();
         if self.layout == Layout::Relationships {
@@ -131,6 +147,25 @@ impl GraphView {
                         .edges
                         .iter()
                         .any(|edge| edge.from == question_id && edge.to == record.id)
+            })
+            .fold(Rect::NOTHING, |rect, (i, _)| {
+                rect.union(Rect::from_min_size(self.positions[i], NODE_SIZE))
+            })
+            .expand(48.0);
+    }
+
+    pub fn focus_result(&mut self, session: &Investigation, index: usize, visible: usize) {
+        let id = session.records[index].id;
+        self.bounds = session
+            .records
+            .iter()
+            .enumerate()
+            .take(visible)
+            .filter(|(_, record)| {
+                record.id == id
+                    || session.edges.iter().any(|e| {
+                        (e.from == id && e.to == record.id) || (e.to == id && e.from == record.id)
+                    })
             })
             .fold(Rect::NOTHING, |rect, (i, _)| {
                 rect.union(Rect::from_min_size(self.positions[i], NODE_SIZE))

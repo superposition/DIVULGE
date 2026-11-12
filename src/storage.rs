@@ -1,5 +1,4 @@
 use crate::domain::{Artifact, Investigation, SCHEMA_VERSION};
-use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
     io::Read,
@@ -16,33 +15,30 @@ pub fn inspect_artifact(path: &Path) -> Result<Artifact, String> {
     if !metadata.is_file() || metadata.len() > MAX_ARTIFACT_BYTES {
         return Err("Choose a regular file no larger than 128 MiB".into());
     }
-    let mut hash = Sha256::new();
-    let mut preview = Vec::new();
-    let mut length = 0_u64;
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let count = file.read(&mut buffer).map_err(|error| error.to_string())?;
-        if count == 0 {
-            break;
-        }
-        length += count as u64;
-        if length > MAX_ARTIFACT_BYTES {
-            return Err("File grew beyond the inspection limit".into());
-        }
-        hash.update(&buffer[..count]);
-        let keep = (256 - preview.len()).min(count);
-        preview.extend_from_slice(&buffer[..keep]);
+    let mut bytes = Vec::new();
+    file.by_ref()
+        .take(MAX_ARTIFACT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() as u64 > MAX_ARTIFACT_BYTES {
+        return Err("File grew beyond the inspection limit".into());
     }
-    Ok(Artifact {
+    let mut artifact = Artifact {
         name: path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned(),
-        length,
-        sha256: format!("{:x}", hash.finalize()),
-        preview,
-    })
+        length: bytes.len() as u64,
+        sha256: crate::fwsc::digest(&bytes),
+        preview: bytes[..bytes.len().min(256)].to_vec(),
+        firmware: None,
+    };
+    if artifact.matches_v15_reference() {
+        // Hashing and parsing use the same read, avoiding a file-change race.
+        artifact.firmware = Some(crate::fwsc::decode_v15(&bytes)?);
+    }
+    Ok(artifact)
 }
 
 pub fn load(path: &Path) -> Result<Investigation, String> {
@@ -56,8 +52,8 @@ pub fn load(path: &Path) -> Result<Investigation, String> {
     }
     let mut investigation: Investigation =
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-    // Version 1 had no saved question plans. Preserve that absence during migration.
-    if investigation.schema_version == 1 {
+    // Older files have no decoded data. Do not invent results on migration.
+    if matches!(investigation.schema_version, 1 | 2) {
         investigation.schema_version = SCHEMA_VERSION;
     }
     investigation.validate()?;

@@ -11,7 +11,7 @@ DIVULGE is a native eframe application. Browser DOM automation cannot verify its
 - Change between Narrative and Relationships; pan/zoom and fit.
 - Replay, review an older node, and verify advancing records do not steal selection.
 - Inspect File/Edit/View menus and relevant keyboard shortcuts.
-- Open a real local artifact, inspect its hash and bounded bytes, and confirm no decoding is claimed.
+- Open a real local artifact, inspect its hash and bounded bytes. For the exact V15 identity, check decoded package/app data and keep instruction/runtime claims unresolved.
 - Add a note, save, reopen, and verify persistence.
 - Inspect keyboard focus, accessibility labels, dialogs, and error feedback.
 
@@ -38,3 +38,11 @@ Still pending: the final-build visual pass, 1280x720 and 1920x1080 checks, nativ
 ## Question focus
 
 2026-11-12: built and opened the question-plan preview on the local V15 artifact. Through native Computer Use, clicked Focus question from the identity explanation. Observed selection move to question 0001, the graph zoom onto the question and next probe, and the terminal pane show WHY, HOW, TO WHAT END, ANSWERED WHEN, IF NOT, and links to the available probe/observation/explanation. Fit all remains visible as the return to overview. Eight tests pass, including question ownership/plan validation and v1-to-v2 load migration without invented context. Native save/reopen verification remains pending as recorded above.
+
+## Real V15 package data
+
+2026-11-12: closed both superseded previews and saved the remaining five-record investigation through the native Save dialog before replacing that preview. The save was confirmed on disk (schema 2, five records, no notes); native reopen is still pending. Keep only one workbench window open during future iterations.
+
+Built the updated native application and visually inspected its 1440x900 data view with the local V15 file. Observed eight members, four unresolved raw CRC comparisons, six JLFS directory entries, and the checked application span. The terminal pane displays original file `0x4534`, package `0x4520`, flash `0x4120`, declared address `0x02000120`, length 581,564, app CRC `5D48`, area CRC `F399`, SHA-256 and decoded bytes. Selecting USR changed the inspector to type 50, its actual offsets, lengths, hash and stored/calculated CRC `E3BC/5419`. Switching to Graph retained USR and framed its directory relationship. Returned to Data afterward.
+
+The local `inspect_firmware` example verifies the application identity and address mapping and validates a serialized report round-trip. Synthetic tests cover CRC's standard vector, marker-boundary fragmentation, truncation, out-of-bounds/overflow ranges, invalid declared sizes, exact-profile rejection and unresolved member checksums. No firmware fixture is committed. Clippy and the native build pass. The compact layout, native reopen, complete keyboard/accessibility review and broader replay interactions remain tracked checks; the native accessibility provider truncates this dense view's root tree, so this visual pass used screenshot coordinates.

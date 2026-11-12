@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 pub const V15_SHA256: &str = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a";
 pub const V15_LENGTH: u64 = 699_956;
 
@@ -12,7 +12,7 @@ pub struct RecordId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileOffset(pub u64);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MappedAddress(pub u64);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -46,6 +46,7 @@ pub enum RecordData {
         operation: String,
     },
     Observation(Observation),
+    Firmware(crate::fwsc::FirmwareView),
     Explanation {
         basis: Basis,
         evidence: Vec<RecordId>,
@@ -61,6 +62,7 @@ impl RecordData {
             Self::Question => "Question",
             Self::Probe { .. } => "Probe",
             Self::Observation(_) => "Observation",
+            Self::Firmware(_) => "Decoded data",
             Self::Explanation { .. } => "Explanation",
             Self::Unknown { .. } => "Unknown",
         }
@@ -71,6 +73,9 @@ impl RecordData {
             Self::Question => "RecordData::Question",
             Self::Probe { .. } => "RecordData::Probe { operation: String }",
             Self::Observation(_) => "Observation { offset: FileOffset, bytes: Vec<u8>, .. }",
+            Self::Firmware(_) => {
+                "FirmwareView -> PackageHeader / PackageEntry / Application; FileOffset != PackageOffset != FlashOffset != MappedAddress"
+            }
             Self::Explanation { .. } => {
                 "RecordData::Explanation { basis: Basis, evidence: Vec<RecordId> }"
             }
@@ -155,6 +160,8 @@ pub struct Artifact {
     pub length: u64,
     pub sha256: String,
     pub preview: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub firmware: Option<crate::fwsc::FirmwareReport>,
 }
 
 impl Artifact {
@@ -237,13 +244,26 @@ impl Investigation {
                     return Err("Observation extends beyond the artifact".into());
                 }
             }
+            if let RecordData::Firmware(view) = record.data
+                && !self
+                    .artifact
+                    .as_ref()
+                    .and_then(|a| a.firmware.as_ref())
+                    .is_some_and(|report| report.contains(view))
+            {
+                return Err("Decoded record references missing firmware data".into());
+            }
             if let RecordData::Explanation { evidence, .. } = &record.data {
                 if evidence.is_empty() {
                     return Err("An explanation must cite an observation".into());
                 }
                 for id in evidence {
                     if !self.records.iter().any(|candidate| {
-                        candidate.id == *id && matches!(candidate.data, RecordData::Observation(_))
+                        candidate.id == *id
+                            && matches!(
+                                candidate.data,
+                                RecordData::Observation(_) | RecordData::Firmware(_)
+                            )
                     }) {
                         return Err("Explanation references a missing observation".into());
                     }
@@ -265,6 +285,14 @@ impl Investigation {
                 || artifact.preview.len() as u64 > artifact.length)
         {
             return Err("Invalid artifact identity or preview".into());
+        }
+        if let Some(artifact) = &self.artifact
+            && let Some(firmware) = &artifact.firmware
+        {
+            if !artifact.matches_v15_reference() {
+                return Err("A saved V15 report requires the V15 identity".into());
+            }
+            firmware.validate(artifact.length)?;
         }
         Ok(())
     }
@@ -437,8 +465,8 @@ impl Investigation {
             action: "Read the selected file in a worker; calculate SHA-256 and retain its first 256 bytes.".into(),
             observation: format!("{} bytes. SHA-256: {}", artifact.length, artifact.sha256),
             explanation: if matched { "The length and SHA-256 match the configured official FM-1 V15 reference.".into() } else { "The bytes have an identity. They do not match the configured FM-1 V15 reference.".into() },
-            uncertainty: "Hashing does not decode the package or establish runtime behavior. The firmware parser, REA adapter, pi32v2 decoder, and AI harness are not connected in this foundation build.".into(),
-            next_step: if matched { "Implement the checked FWSC package reader and trace each derived range back to this artifact.".into() } else { "Keep this artifact available for generic inspection; V15-specific parsing requires an exact identity match.".into() },
+            uncertainty: "Identity alone does not establish program behavior. Decoding results are recorded separately; disassembly and the AI harness are not connected.".into(),
+            next_step: if matched { "Inspect the FWSC package records and trace the application back to this artifact.".into() } else { "Keep this artifact available for generic inspection; V15-specific parsing requires an exact identity match.".into() },
         };
         let mut records = vec![
             Record {
@@ -523,7 +551,7 @@ impl Investigation {
                     ],
                     enables: "Give the pi32v2 decoder the correct application bytes and address context, so instruction and branch claims can point back to evidence.".into(),
                     answered_when: "A checked application span, transformation provenance, and justified address mapping are available. A plausible-looking instruction listing is insufficient.".into(),
-                    if_not: "Retain unsupported checks and ambiguous mappings as unknown. The package parser and load map are not connected in this build.".into(),
+                    if_not: "Retain unsupported checks and ambiguous mappings as unknown; do not interpret unchecked bytes as instructions.".into(),
                 }} else { QuestionPlan {
                     why: "The file does not match our V15 reference. Assuming its format would make every later offset and type interpretation unreliable.".into(),
                     steps: vec![
@@ -570,6 +598,7 @@ impl Investigation {
         session.artifact = Some(artifact);
         session.records = records;
         session.edges.retain(|edge| edge.to.0 <= 5);
+        session.append_firmware_records();
         session
     }
 }
