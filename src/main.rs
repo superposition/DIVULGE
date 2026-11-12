@@ -5,6 +5,7 @@ mod app;
 mod code_view;
 mod data_view;
 mod graph;
+mod history_view;
 mod insight;
 mod rea_view;
 

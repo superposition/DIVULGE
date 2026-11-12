@@ -71,7 +71,7 @@ Custom FM-1 firmware source and SDK examples are reference material, not recover
 
 ## Foundation limits
 
-The checked domain now distinguishes typed evidence references, parsed fields, scalar views and type hypotheses. The broader AI executor, full event sourcing and the PDF workshop remain tracked work. REA currently contributes canonical entropy evidence through its own read-only provider. OMP currently proposes one step from a bounded snapshot; it cannot launch an analysis tool. Both model requests and vendor disassembly support cancellation. Menus for unimplemented operations explain their prerequisites and do not fabricate results.
+The checked domain distinguishes typed evidence references, parsed fields, scalar views and type hypotheses. The versioned event ledger retains immutable findings, job lifecycles, note revisions, steering and scoped analyst resolutions, and reconstructs checkpoints offline; see [history](history.md). The broader AI executor and PDF workshop remain tracked work. REA contributes canonical entropy evidence through its own read-only provider. OMP proposes one step from a bounded snapshot; it cannot launch an analysis tool. Both model requests and vendor disassembly support cancellation. Menus for unimplemented operations explain their prerequisites and do not fabricate results.
 
 ## REA evidence boundary
 

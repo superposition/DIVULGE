@@ -6,7 +6,7 @@ use std::{
 };
 
 const MAX_ARTIFACT_BYTES: u64 = 128 * 1024 * 1024;
-const MAX_SESSION_BYTES: u64 = 8 * 1024 * 1024;
+pub const MAX_SESSION_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Pure file inspection: never executes or modifies the selected artifact.
 pub fn inspect_artifact(path: &Path) -> Result<Artifact, String> {
@@ -60,33 +60,110 @@ pub fn inspect_with_image(path: &Path) -> Result<Inspection, String> {
 }
 
 pub fn load(path: &Path) -> Result<Investigation, String> {
+    load_history(path).map(|history| history.session().clone())
+}
+
+pub fn load_history(path: &Path) -> Result<crate::history::History, String> {
+    let result = read_bounded(path).and_then(|bytes| decode_history(&bytes));
+    result.map_err(|error| {
+        if backup_path(path).is_file() {
+            format!("{error}. A previous save exists; use File > Recover previous save to inspect it. No recovery was applied automatically.")
+        } else { error }
+    })
+}
+
+fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
     let file = File::open(path).map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     file.take(MAX_SESSION_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| error.to_string())?;
     if bytes.len() as u64 > MAX_SESSION_BYTES {
-        return Err("Investigation exceeds the 8 MiB load limit".into());
+        return Err("Investigation exceeds the 16 MiB load limit".into());
+    }
+    Ok(bytes)
+}
+
+fn decode_history(bytes: &[u8]) -> Result<crate::history::History, String> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    if value.get("format").is_some() {
+        let document: crate::history::Document =
+            serde_json::from_value(value).map_err(|e| e.to_string())?;
+        return crate::history::History::restore(document);
     }
     let mut investigation: Investigation =
-        serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+        serde_json::from_value(value).map_err(|error| error.to_string())?;
+    let original_version = investigation.schema_version;
     // Older files have no decoded data. Do not invent results on migration.
-    if matches!(investigation.schema_version, 1..=6) {
+    if matches!(investigation.schema_version, 1..=7) {
         investigation.schema_version = SCHEMA_VERSION;
     }
     investigation.validate()?;
-    Ok(investigation)
+    crate::history::History::new(
+        &investigation,
+        &format!(
+            "Imported schema {original_version} snapshot. Earlier job and edit chronology was not recorded; no events were invented."
+        ),
+    )
 }
 
-/// Writes a sibling temporary file before replacement, preserving an existing save on errors.
+/// Compatibility helper for examples; the native app retains its history in memory.
 pub fn save(path: &Path, investigation: &Investigation) -> Result<(), String> {
     investigation.validate()?;
-    let bytes = serde_json::to_vec_pretty(investigation).map_err(|error| error.to_string())?;
+    let mut history = if path.exists() {
+        let prior = load_history(path)?;
+        if prior.session().title == investigation.title
+            && prior.session().artifact.as_ref().map(|a| &a.sha256)
+                == investigation.artifact.as_ref().map(|a| &a.sha256)
+        {
+            prior
+        } else {
+            crate::history::History::new(
+                investigation,
+                "Starting snapshot saved by a headless caller",
+            )?
+        }
+    } else {
+        crate::history::History::new(
+            investigation,
+            "Starting snapshot saved by a headless caller",
+        )?
+    };
+    history.capture(investigation)?;
+    save_history(path, &history)
+}
+
+pub fn backup_path(path: &Path) -> std::path::PathBuf {
+    path.with_file_name(format!(
+        "{}.bak",
+        path.file_name().unwrap_or_default().to_string_lossy()
+    ))
+}
+
+/// Sync a unique sibling before replacement. Only a validated previous save becomes a backup.
+/// A crash before replacement leaves the primary intact; after replacement the backup is retained.
+pub fn save_history(path: &Path, history: &crate::history::History) -> Result<(), String> {
+    crate::history::History::restore(history.document().clone())?;
+    let bytes = serde_json::to_vec_pretty(history.document()).map_err(|error| error.to_string())?;
     if bytes.len() as u64 > MAX_SESSION_BYTES {
-        return Err("Investigation exceeds the 8 MiB save limit".into());
+        return Err("Investigation exceeds the 16 MiB save limit".into());
     }
+    if path.exists() {
+        let previous = read_bounded(path)?;
+        decode_history(&previous)
+            .map_err(|e| format!("Existing save is invalid; recover or save to a new file: {e}"))?;
+        atomic_write(&backup_path(path), &previous)?;
+    }
+    atomic_write(path, &bytes)
+}
+
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
     let temp_name = format!(
-        "{}.{}.tmp",
+        "{}.{}.{unique}.tmp",
         path.file_name().unwrap_or_default().to_string_lossy(),
         std::process::id()
     );
@@ -97,7 +174,7 @@ pub fn save(path: &Path, investigation: &Investigation) -> Result<(), String> {
         .open(&temp)
         .map_err(|error| error.to_string())?;
     use std::io::Write;
-    if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_all()) {
+    if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_all()) {
         drop(file);
         let _ = fs::remove_file(&temp);
         return Err(error.to_string());
@@ -152,6 +229,52 @@ mod tests {
         assert!(migrated.records.iter().all(|r| r.question_plan.is_none()));
         fs::write(&session_path, b"{broken").unwrap();
         assert!(load(&session_path).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn interrupted_write_backup_recovery_and_unknown_versions() {
+        let root = std::env::temp_dir().join(format!(
+            "divulge-recovery-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("case.json");
+        let mut session = Investigation::workshop();
+        save(&path, &session).unwrap();
+        // An interrupted sibling write cannot replace the validated primary.
+        fs::write(root.join("case.json.interrupted.tmp"), b"{incomplete").unwrap();
+        assert_eq!(load(&path).unwrap().records.len(), 6);
+        session.records[2].note = "New checkpoint".into();
+        save(&path, &session).unwrap();
+        assert_eq!(load(&path).unwrap().records[2].note, "New checkpoint");
+        assert!(
+            load(&backup_path(&path)).unwrap().records[2]
+                .note
+                .is_empty()
+        );
+        // A damaged primary is never silently recovered or allowed to overwrite the backup.
+        fs::write(&path, b"{broken").unwrap();
+        assert!(load(&path).unwrap_err().contains("Recover previous save"));
+        assert!(save(&path, &session).is_err());
+        let valid = fs::read(backup_path(&path)).unwrap();
+        assert!(decode_history(&valid).is_ok());
+        let mut unknown: serde_json::Value = serde_json::from_slice(&valid).unwrap();
+        unknown["version"] = 99.into();
+        assert!(decode_history(&serde_json::to_vec(&unknown).unwrap()).is_err());
+        unknown["version"] = 1.into();
+        unknown["baseline"]["edges"][0]["to"] = 999.into();
+        assert!(decode_history(&serde_json::to_vec(&unknown).unwrap()).is_err());
+        let oversized = root.join("oversized.json");
+        File::create(&oversized)
+            .unwrap()
+            .set_len(MAX_SESSION_BYTES + 1)
+            .unwrap();
+        assert!(load(&oversized).unwrap_err().contains("16 MiB"));
         fs::remove_dir_all(root).unwrap();
     }
 }

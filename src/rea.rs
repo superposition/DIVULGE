@@ -369,6 +369,7 @@ impl ReaRun {
 }
 
 pub struct Job {
+    pub id: String,
     pub receiver: mpsc::Receiver<Receipt>,
     pub cancel: Arc<AtomicBool>,
     pub generation: u64,
@@ -380,15 +381,18 @@ impl Drop for Job {
     }
 }
 pub fn start(config: Config, request: Request, generation: u64) -> Job {
+    let id = request_id();
+    let worker_id = id.clone();
     let (send, receiver) = mpsc::channel();
     let cancel = Arc::new(AtomicBool::new(false));
     let flag = cancel.clone();
     let task = request.clone();
     std::thread::spawn(move || {
-        let receipt = run(&config, &task, flag);
+        let receipt = run_with_id(&config, &task, flag, worker_id);
         let _ = send.send(receipt);
     });
     Job {
+        id,
         receiver,
         cancel,
         generation,
@@ -396,14 +400,19 @@ pub fn start(config: Config, request: Request, generation: u64) -> Job {
     }
 }
 pub fn run(config: &Config, request: &Request, cancel: Arc<AtomicBool>) -> Receipt {
-    let id = format!(
+    run_with_id(config, request, cancel, request_id())
+}
+fn request_id() -> String {
+    format!(
         "rea-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos()
-    );
+    )
+}
+fn run_with_id(config: &Config, request: &Request, cancel: Arc<AtomicBool>, id: String) -> Receipt {
     let empty = |kind: &str, error: String| Receipt {
         v: 1,
         id: id.clone(),

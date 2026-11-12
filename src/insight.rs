@@ -85,9 +85,11 @@ impl Inspector {
             });
         });
         ui.label(mono(
-            match session.origin {
-                Origin::WorkshopFixture => "fixture / recorded output",
-                Origin::LocalArtifact => "artifact / recorded output",
+            match (&record.data, session.origin) {
+                (RecordData::TypeHypothesis(_), _) => "analyst hypothesis / inference",
+                (RecordData::Review { .. }, _) => "analyst review / recorded decision",
+                (_, Origin::WorkshopFixture) => "fixture / recorded output",
+                (_, Origin::LocalArtifact) => "artifact / recorded output",
             },
             DIM,
         ));
@@ -256,7 +258,12 @@ impl Inspector {
                         for id in ids { if let Some(index)=session.records.iter().take(visible_count).position(|r|r.id==id.record()) && ui.link(format!("#{} / {}",id.value(),session.records[index].title)).clicked(){response.selected_record=Some(index);} }
                     }
                 }
-                if let RecordData::Explanation { evidence, .. } = &record.data {
+                if let RecordData::Review {target,..}=&record.data {
+                    if let Some(index)=session.records.iter().take(visible_count).position(|r|r.id==*target)
+                        && ui.link(format!("Original record #{} / {}",target.0,session.records[index].title)).clicked(){response.selected_record=Some(index);}
+                    ui.label("The original record is preserved. A resolution records an analyst decision within its stated limits.");
+                }
+                if let RecordData::Explanation { evidence, .. } | RecordData::Review {evidence,..} = &record.data {
                     ui.label(mono("@ evidence", ACCENT));
                     for id in evidence {
                         if let Some(index) = session.records.iter().position(|r| r.id == id.record())

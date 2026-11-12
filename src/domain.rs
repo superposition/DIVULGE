@@ -2,7 +2,7 @@ pub use crate::evidence::{InsightId, ObservationId, QuestionId};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 pub const V15_SHA256: &str = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a";
 pub const V15_LENGTH: u64 = 699_956;
 
@@ -55,6 +55,11 @@ pub enum RecordData {
         evidence: Vec<ObservationId>,
     },
     TypeHypothesis(crate::evidence::TypeHypothesis),
+    Review {
+        kind: crate::history::ReviewKind,
+        target: RecordId,
+        evidence: Vec<ObservationId>,
+    },
     Unknown {
         next_probe: String,
     },
@@ -71,6 +76,7 @@ impl RecordData {
             Self::Rea(_) => "REA evidence",
             Self::Explanation { .. } => "Explanation",
             Self::TypeHypothesis(_) => "Type hypothesis",
+            Self::Review { .. } => "Analyst review",
             Self::Unknown { .. } => "Unknown",
         }
     }
@@ -94,6 +100,9 @@ impl RecordData {
             }
             Self::TypeHypothesis(_) => {
                 "TypeHypothesis { proposed_type, evidence: Vec<ObservationId>, counter_evidence, limitation } / inference"
+            }
+            Self::Review { .. } => {
+                "Review { kind, target: RecordId, evidence: Vec<ObservationId> } / preserves the original finding"
             }
             Self::Unknown { .. } => "RecordData::Unknown { next_probe: String }",
         }
@@ -144,6 +153,9 @@ pub enum Relation {
     LeavesOpen,
     Suggests,
     Contradicts,
+    Revises,
+    Resolves,
+    Steers,
 }
 
 impl Relation {
@@ -155,6 +167,9 @@ impl Relation {
             Self::LeavesOpen => "leaves open",
             Self::Suggests => "suggests",
             Self::Contradicts => "contradicts",
+            Self::Revises => "revises",
+            Self::Resolves => "resolves",
+            Self::Steers => "steers",
         }
     }
 }
@@ -383,6 +398,28 @@ impl Investigation {
             }
             if let RecordData::TypeHypothesis(hypothesis) = &record.data {
                 hypothesis.validate(self)?;
+            }
+            if let RecordData::Review {
+                kind,
+                target,
+                evidence,
+            } = &record.data
+            {
+                if !self
+                    .records
+                    .iter()
+                    .take_while(|r| r.id != record.id)
+                    .any(|r| r.id == *target)
+                    || record.insight.explanation.trim().is_empty()
+                    || record.insight.uncertainty.trim().is_empty()
+                    || evidence.len() > 16
+                    || (*kind == crate::history::ReviewKind::Resolution && evidence.is_empty())
+                {
+                    return Err("Review requires a prior target, rationale, limits and supporting resolution evidence".into());
+                }
+                for id in evidence {
+                    id.resolve(self)?;
+                }
             }
             if let RecordData::Explanation { evidence, .. } = &record.data {
                 if evidence.is_empty() {

@@ -21,12 +21,15 @@ enum FileCommand {
     Workshop,
     OpenArtifact,
     OpenSession,
+    RecoverSession,
     Save,
     SaveAs,
     VerifySource,
 }
 
 struct CodeJob {
+    history_id: String,
+    run_id: RunId,
     receiver: mpsc::Receiver<Result<DisassemblyReport, String>>,
     cancel: Arc<AtomicBool>,
     generation: u64,
@@ -35,6 +38,10 @@ struct CodeJob {
 
 pub struct DivulgeApp {
     session: Investigation,
+    history: divulge::history::History,
+    history_view: crate::history_view::HistoryView,
+    history_dirty: bool,
+    tracked_jobs: std::collections::BTreeMap<String, (String, Option<RunId>)>,
     attention: Attention,
     graph: GraphView,
     inspector: crate::insight::Inspector,
@@ -80,6 +87,14 @@ impl DivulgeApp {
         let mut graph = GraphView::default();
         graph.reset(&session);
         let mut app = Self {
+            history: divulge::history::History::new(
+                &session,
+                "Synthetic teaching baseline; no tools executed",
+            )
+            .unwrap(),
+            history_view: Default::default(),
+            history_dirty: false,
+            tracked_jobs: Default::default(),
             session,
             attention,
             graph,
@@ -123,9 +138,10 @@ impl DivulgeApp {
         if let Some(index) = args.iter().position(|arg| arg == "--session")
             && let Some(path) = args.get(index + 1)
         {
-            match storage::load(&PathBuf::from(path)) {
-                Ok(session) => {
-                    app.replace(session, false);
+            match storage::load_history(&PathBuf::from(path)) {
+                Ok(history) => {
+                    app.replace(history.session().clone(), false);
+                    app.history = history;
                     app.save_path = Some(PathBuf::from(path));
                     restored = true;
                 }
@@ -144,24 +160,105 @@ impl DivulgeApp {
         &self.session.records[self.attention.selected_index]
     }
 
+    fn capture_history(&mut self) {
+        if self.history_dirty {
+            if let Err(error) = self.history.capture(&self.session) {
+                self.error = Some(error);
+            }
+            self.history_dirty = false;
+        }
+    }
+    fn sync_jobs(&mut self) {
+        let mut active = std::collections::BTreeMap::new();
+        if let Some(job) = &self.code_job {
+            active.insert(
+                job.history_id.clone(),
+                ("pi32 disassembly".into(), Some(job.run_id)),
+            );
+        }
+        if let Some(job) = &self.ai.job
+            && job.propose
+        {
+            active.insert(job.id.clone(), ("OMP proposal".into(), None));
+        }
+        if let Some(job) = &self.rea.job
+            && !matches!(job.request, divulge::rea::Request::Discover)
+        {
+            active.insert(job.id.clone(), ("REA evidence".into(), None));
+        }
+        if active == self.tracked_jobs {
+            return;
+        }
+        self.capture_history();
+        for (id, (_, run_id)) in &self.tracked_jobs {
+            if !active.contains_key(id) {
+                let outcome = self
+                    .session
+                    .ai_runs
+                    .iter()
+                    .find(|r| r.id == *id)
+                    .map(|r| r.outcome.clone())
+                    .or_else(|| {
+                        self.session
+                            .rea_runs
+                            .iter()
+                            .find(|r| r.receipt.id == *id)
+                            .map(|r| r.receipt.kind.clone())
+                    })
+                    .or_else(|| {
+                        run_id
+                            .and_then(|n| self.session.disassemblies.iter().find(|r| r.id == n))
+                            .map(|r| format!("{:?}", r.capture.outcome))
+                    })
+                    .unwrap_or_else(|| {
+                        "Ended without an accepted receipt; no result claimed".into()
+                    });
+                if let Err(e) = self.history.finish_job(id, &outcome) {
+                    self.error = Some(e);
+                }
+            }
+        }
+        for (id, (adapter, _)) in &active {
+            if !self.tracked_jobs.contains_key(id)
+                && let Err(e) = self.history.start_job(id, adapter)
+            {
+                self.error = Some(e);
+            }
+        }
+        self.tracked_jobs = active;
+        self.dirty = true;
+    }
+
     fn request(&mut self, command: FileCommand) {
-        if self.artifact_worker.is_some()
-            || self.code_job.is_some()
-            || self.ai.job.is_some()
-            || self.rea.job.is_some()
+        if !matches!(command, FileCommand::Save | FileCommand::SaveAs)
+            && (self.artifact_worker.is_some()
+                || self.code_job.is_some()
+                || self.ai.job.is_some()
+                || self.rea.job.is_some())
         {
             self.status = "Finish or cancel the active job before changing files.".into();
             return;
         }
         let replaces = matches!(
             command,
-            FileCommand::Workshop | FileCommand::OpenArtifact | FileCommand::OpenSession
+            FileCommand::Workshop
+                | FileCommand::OpenArtifact
+                | FileCommand::OpenSession
+                | FileCommand::RecoverSession
         );
         self.pending = Some(command);
         self.confirm_discard = replaces && self.dirty;
     }
 
     fn replace(&mut self, session: Investigation, fresh: bool) {
+        self.history = divulge::history::History::new(
+            &session,
+            "Starting investigation snapshot; prior chronology unavailable",
+        )
+        .expect("validated replacement");
+        self.history_view = Default::default();
+        self.history_dirty = false;
+        self.tracked_jobs.clear();
         self.ai.reset();
         self.rea.reset();
         self.source_path = None;
@@ -243,17 +340,27 @@ impl DivulgeApp {
                     self.inspect(path, ctx, false);
                 }
             }
-            FileCommand::OpenSession => {
+            FileCommand::OpenSession | FileCommand::RecoverSession => {
                 if let Some(path) = rfd::FileDialog::new()
                     .set_title("Open a DIVULGE investigation")
                     .add_filter("DIVULGE investigation", &["json"])
                     .pick_file()
                 {
-                    match storage::load(&path) {
-                        Ok(session) => {
-                            self.replace(session, false);
-                            self.save_path = Some(path);
+                    let recovery = matches!(command, FileCommand::RecoverSession);
+                    let source = if recovery {
+                        storage::backup_path(&path)
+                    } else {
+                        path.clone()
+                    };
+                    match storage::load_history(&source) {
+                        Ok(history) => {
+                            self.replace(history.session().clone(), false);
+                            self.history = history;
+                            self.save_path = if recovery { None } else { Some(path) };
                             self.status = "Opened recorded investigation. Replay does not execute tools or contact a model.".into();
+                            if recovery {
+                                self.status="Recovered the previous save for inspection. Save As keeps the damaged primary available for diagnosis.".into();
+                            }
                         }
                         Err(error) => self.error = Some(error),
                     }
@@ -281,10 +388,15 @@ impl DivulgeApp {
                         .save_file()
                 });
                 if let Some(path) = path {
-                    match storage::save(&path, &self.session) {
+                    let saved = self
+                        .history
+                        .capture(&self.session)
+                        .and_then(|_| storage::save_history(&path, &self.history));
+                    match saved {
                         Ok(()) => {
                             self.save_path = Some(path);
                             self.dirty = false;
+                            self.history_dirty = false;
                             self.status =
                                 "Investigation saved with records, notes, and evidence links."
                                     .into();
@@ -367,6 +479,15 @@ impl DivulgeApp {
         self.playing = false;
         self.show_code = true;
         self.code_job = Some(CodeJob {
+            history_id: format!(
+                "pi32-{}-{id}-{}",
+                self.generation,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ),
+            run_id: RunId(id),
             receiver,
             cancel,
             generation: self.generation,
@@ -435,6 +556,10 @@ impl DivulgeApp {
                     self.request(FileCommand::OpenSession);
                     ui.close();
                 }
+                if ui.button("Recover previous save...").clicked() {
+                    self.request(FileCommand::RecoverSession);
+                    ui.close();
+                }
                 if ui
                     .add_enabled(
                         self.session.artifact.is_some(),
@@ -455,6 +580,10 @@ impl DivulgeApp {
                 }
                 if ui.button("Save investigation as...").clicked() {
                     self.request(FileCommand::SaveAs);
+                    ui.close();
+                }
+                if ui.button("Export portable review...").clicked() {
+                    self.history_view.export_open = true;
                     ui.close();
                 }
                 ui.separator();
@@ -481,6 +610,10 @@ impl DivulgeApp {
                 }
             });
             ui.menu_button("View", |ui| {
+                if ui.button("Case history and review...").clicked() {
+                    self.history_view.open = true;
+                    ui.close();
+                }
                 ui.checkbox(&mut self.show_tree, "Investigation tree");
                 ui.checkbox(&mut self.show_insight, "Harness Insight");
                 ui.checkbox(&mut self.show_types, "Rust type annotations");
@@ -770,12 +903,14 @@ impl DivulgeApp {
                 .iter()
                 .position(|r| matches!(r.data, RecordData::Disassembly(run) if run == id))
         {
-            self.dirty |= self.code.inspector(
+            let changed = self.code.inspector(
                 ui,
                 &self.session.disassemblies[run_index],
                 &mut self.session.records[record_index].note,
                 self.show_types,
             );
+            self.dirty |= changed;
+            self.history_dirty |= changed;
             return;
         }
         let response = self.inspector.show(
@@ -789,8 +924,10 @@ impl DivulgeApp {
             self.attention.select(index);
         }
         self.dirty |= response.note_changed;
+        self.history_dirty |= response.note_changed;
         if let Some(index) = response.created_record {
             self.dirty = true;
+            self.history_dirty = true;
             self.attention.visible_count = self.session.records.len();
             self.attention.select(index);
             self.graph.reset(&self.session);
@@ -939,6 +1076,21 @@ impl DivulgeApp {
     }
 
     fn dialogs(&mut self, ctx: &egui::Context) {
+        let selected = self.selected().id;
+        if let Some(index) = self
+            .history_view
+            .show(ctx, &self.history, &mut self.session, selected)
+        {
+            self.dirty = true;
+            self.history_dirty = true;
+            self.attention.visible_count = self.session.records.len();
+            self.attention.select(index);
+            self.graph.reset(&self.session);
+            self.show_code = false;
+            self.show_data = false;
+            self.graph
+                .focus_result(&self.session, index, self.attention.visible_count);
+        }
         if let Some(index) = self.rea.show(
             ctx,
             &self.session,
@@ -1036,6 +1188,7 @@ impl eframe::App for DivulgeApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.rea.poll(&mut self.session, self.generation) {
             self.dirty = true;
+            self.history_dirty = true;
             self.attention.visible_count = self.session.records.len();
             let bounds = self.graph.bounds;
             self.graph.reset(&self.session);
@@ -1046,6 +1199,7 @@ impl eframe::App for DivulgeApp {
         }
         if self.ai.poll(&mut self.session, self.generation) {
             self.dirty = true;
+            self.history_dirty = true;
             self.attention.visible_count = self.session.records.len();
             let reading_bounds = self.graph.bounds;
             self.graph.reset(&self.session);
@@ -1102,6 +1256,7 @@ impl eframe::App for DivulgeApp {
                                         self.attention.visible_count = self.session.records.len();
                                         self.graph.reset(&self.session);
                                         self.dirty = true;
+                                        self.history_dirty = true;
                                         if focus {
                                             self.attention.select(index);
                                             self.code.select_run(
@@ -1194,6 +1349,7 @@ impl eframe::App for DivulgeApp {
                                 self.image = inspection.image.map(Arc::new);
                                 self.source_path = Some(inspection.path);
                                 self.dirty = true;
+                                self.history_dirty = true;
                                 self.status = if self.show_data {
                                     "V15 package decoded. Open Code to disassemble a selected application span.".into()
                                 } else {
@@ -1347,6 +1503,10 @@ impl eframe::App for DivulgeApp {
             .frame(egui::Frame::new().fill(BACKGROUND).inner_margin(18))
             .show(ui, |ui| self.center(ui));
         self.dialogs(&ctx);
+        self.sync_jobs();
+        if !ctx.egui_wants_keyboard_input() {
+            self.capture_history();
+        }
         self.process_pending(&ctx);
     }
 }
