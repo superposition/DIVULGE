@@ -30,3 +30,7 @@ Screenshots must show actual rendered state. Filesystem/process checks alone do 
 - Six domain/storage tests pass, the workshop example runs, and format/lint checks pass.
 
 Still pending: the final-build visual pass, 1280x720 and 1920x1080 checks, native save/reopen completion, pan/zoom and resize checks, and broader keyboard/accessibility review. These are tracked in #1, #10, and #14. No model, firmware execution, or flashing was invoked.
+
+## Terminal evidence inspector
+
+2026-11-12: built a separate native preview with the terminal-style right pane and the actual locally supplied V15 artifact. Visually verified the monospace transcript, artifact identity, file range, hex/ASCII rows, and scalar values. Selected the byte at file offset 0x00000001 through Computer Use and observed the little-endian u16 view change to 0x2F7B and u32 to 0x3F0C2F7B. The pane explicitly distinguishes file offsets from unresolved mapped addresses and states that instructions have not been decoded. Seven tests and Clippy pass. The earlier native save/reopen and compact-layout checks remain open.

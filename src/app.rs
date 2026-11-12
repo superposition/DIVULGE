@@ -22,6 +22,7 @@ pub struct DivulgeApp {
     session: Investigation,
     attention: Attention,
     graph: GraphView,
+    inspector: crate::insight::Inspector,
     playing: bool,
     next_tick: Instant,
     show_tree: bool,
@@ -56,6 +57,7 @@ impl DivulgeApp {
             session,
             attention,
             graph,
+            inspector: crate::insight::Inspector::default(),
             playing: false,
             next_tick: Instant::now(),
             show_tree: true,
@@ -422,78 +424,16 @@ impl DivulgeApp {
     }
 
     fn insight(&mut self, ui: &mut egui::Ui) {
-        let selected_index = self.attention.selected_index;
-        let record = self.selected().clone();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Harness Insight").size(18.0).strong());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(
-                    RichText::new(format!("{:02}", record.id.0))
-                        .monospace()
-                        .color(ACCENT),
-                );
-            });
-        });
-        ui.add_space(4.0);
-        ui.label(
-            RichText::new("The question, evidence, and what remains open.")
-                .small()
-                .color(MUTED),
+        let response = self.inspector.show(
+            ui,
+            &mut self.session,
+            self.attention.selected_index,
+            self.show_types,
         );
-        ui.add_space(12.0);
-        ui.separator();
-        egui::ScrollArea::vertical().id_salt(("insight", record.id.0)).auto_shrink([false, false]).show(ui, |ui| {
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(record.data.label().to_uppercase()).small().color(graph::kind_color(&record.data)));
-                if let RecordData::Explanation { basis, .. } = record.data { ui.label(RichText::new(format!("/ {basis}")).small().color(MUTED)); }
-            });
-            ui.add_space(6.0);
-            ui.label(RichText::new(&record.title).size(20.0).strong());
-            ui.add_space(12.0);
-            section(ui, "QUESTION", &record.insight.question);
-            section(ui, "WHY THIS PROBE", &record.insight.purpose);
-            section(ui, "ACTION", &record.insight.action);
-            section(ui, "OBSERVATION", &record.insight.observation);
-            section(ui, "EXPLANATION", &record.insight.explanation);
-            if let RecordData::Explanation { evidence, .. } = &record.data {
-                eyebrow(ui, "EVIDENCE LINKS");
-                for id in evidence {
-                    if let Some(index) = self.session.records.iter().position(|r| r.id == *id)
-                        && ui.link(format!("Record {:02} / {}", id.0, self.session.records[index].title)).clicked() {
-                            self.attention.select(index);
-                        }
-                }
-                ui.add_space(12.0);
-            }
-            if let RecordData::Observation(observation) = &record.data {
-                ui.collapsing("Inspect observed bytes", |ui| {
-                    ui.label(RichText::new(format!("File offset: 0x{:08x}", observation.offset.0)).monospace());
-                    for (row, chunk) in observation.bytes.chunks(8).enumerate() {
-                        ui.label(RichText::new(format!("{:08x}  {}", observation.offset.0 + row as u64 * 8, chunk.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" "))).monospace().size(12.0));
-                    }
-                });
-                ui.add_space(12.0);
-            }
-            egui::Frame::new().fill(Color32::from_rgb(47, 39, 32)).inner_margin(12).corner_radius(6).show(ui, |ui| {
-                ui.label(RichText::new("WHAT REMAINS UNCERTAIN").small().color(Color32::from_rgb(225, 176, 130)));
-                ui.add_space(5.0);
-                ui.label(&record.insight.uncertainty);
-            });
-            ui.add_space(14.0);
-            section(ui, "NEXT QUESTION / PROBE", &record.insight.next_step);
-            if self.show_types {
-                ui.collapsing("Rust types behind this record", |ui| {
-                    ui.add(egui::Label::new(RichText::new(record.data.rust_type()).monospace().size(12.0)).wrap());
-                    ui.label(RichText::new("RecordId connects evidence; the graph position is presentation state.").small().color(MUTED));
-                });
-            }
-            ui.add_space(14.0);
-            eyebrow(ui, "YOUR NOTES");
-            ui.add_space(6.0);
-            let note = &mut self.session.records[selected_index].note;
-            if ui.add(egui::TextEdit::multiline(note).hint_text("Prediction, correction, or next question...").desired_rows(3).desired_width(f32::INFINITY)).changed() { self.dirty = true; }
-        });
+        if let Some(index) = response.selected_record {
+            self.attention.select(index);
+        }
+        self.dirty |= response.note_changed;
     }
 
     fn center(&mut self, ui: &mut egui::Ui) {
@@ -761,9 +701,13 @@ impl eframe::App for DivulgeApp {
         }
         if self.show_insight {
             egui::Panel::right("insight")
-                .default_size(380.0)
-                .size_range(300.0..=560.0)
-                .frame(egui::Frame::new().fill(PANEL).inner_margin(18))
+                .default_size(420.0)
+                .size_range(360.0..=680.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(crate::insight::SURFACE)
+                        .inner_margin(14),
+                )
                 .show(ui, |ui| self.insight(ui));
         }
         egui::CentralPanel::default()
@@ -776,12 +720,6 @@ impl eframe::App for DivulgeApp {
 
 fn eyebrow(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text).size(10.0).color(MUTED));
-}
-fn section(ui: &mut egui::Ui, title: &str, body: &str) {
-    eyebrow(ui, title);
-    ui.add_space(4.0);
-    ui.label(body);
-    ui.add_space(14.0);
 }
 
 fn configure_style(ctx: &egui::Context) {

@@ -2,6 +2,7 @@
 
 mod app;
 mod graph;
+mod insight;
 
 fn main() -> eframe::Result {
     let compact = std::env::args().any(|arg| arg == "--compact");

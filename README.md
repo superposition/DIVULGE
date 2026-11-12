@@ -10,7 +10,7 @@ The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 archite
 
 - Native File / Edit / View / Investigation / Analysis / Model / Help menus.
 - Selectable narrative graph and a small, deterministic force-directed relationship layout.
-- Harness Insight: question, purpose, action, observation, explanation, uncertainty, next step, and evidence links.
+- Terminal-style Harness Insight: file offsets, selectable hex/ASCII bytes, endian-aware scalar views, artifact identity, evidence links, and the question/explanation transcript. Unmapped CPU addresses remain explicitly unresolved.
 - Independent reading position and replay frontier, with Review next and Follow latest.
 - Local artifact hashing, bounded byte previews, and comparison with the configured V15 identity.
 - Notes, versioned investigation save/open, and replay without running tools.
