@@ -27,7 +27,7 @@ The first delivery is a native, reviewable foundation. The full AI-driven firmwa
 | [#13](https://github.com/superposition/DIVULGE/issues/13) | Reproducible, visually verified workshop PDF | #12, stable UI |
 | [#14](https://github.com/superposition/DIVULGE/issues/14) | Native release and FM-1 talk rehearsal | Harness milestone, #13 |
 
-Start with #1 and #3, then #2. The parser and OMP bridge are separate implementation paths that converge in the live investigation. The existing synthetic workshop provides a demonstrable learning path while those integrations are built.
+The exact-V15 reader (#3/#4) and bounded vendor disassembly path (#5) now provide real, source-linked evidence. Essential image identities and checked spans are implemented; #2 remains open for the broader evidence model. Next, build restricted OMP discovery (#7) and REA evidence operations (#6), then connect them through the bounded executor (#8). The synthetic Rust workshop remains available alongside the real V15 case study.
 
 ## Delivery rule
 

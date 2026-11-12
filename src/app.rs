@@ -1,12 +1,19 @@
 use crate::graph::{self, ACCENT, BACKGROUND, GraphView, Layout, MUTED, PANEL, TEXT};
 use divulge::{
-    domain::{Artifact, Attention, Investigation, Origin, RecordData},
+    coordinates::ImageOffset,
+    decoded_image::DecodedImage,
+    domain::{Attention, Investigation, Origin, RecordData, RecordId},
+    pi32::{self, DisassemblyReport, RunId},
     storage,
 };
 use eframe::egui::{self, Color32, FontId, RichText, Stroke};
 use std::{
     path::PathBuf,
-    sync::mpsc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::{Duration, Instant},
 };
 
@@ -16,6 +23,14 @@ enum FileCommand {
     OpenSession,
     Save,
     SaveAs,
+    VerifySource,
+}
+
+struct CodeJob {
+    receiver: mpsc::Receiver<Result<DisassemblyReport, String>>,
+    cancel: Arc<AtomicBool>,
+    generation: u64,
+    reading: (RecordId, Option<RunId>, usize),
 }
 
 pub struct DivulgeApp {
@@ -32,6 +47,13 @@ pub struct DivulgeApp {
     show_help: bool,
     show_activity: bool,
     show_data: bool,
+    show_code: bool,
+    code: crate::code_view::CodeView,
+    image: Option<Arc<DecodedImage>>,
+    code_job: Option<CodeJob>,
+    generation: u64,
+    attach_source: bool,
+    close_after_job: bool,
     presenter: bool,
     filter: String,
     status: String,
@@ -42,7 +64,7 @@ pub struct DivulgeApp {
     pending: Option<FileCommand>,
     confirm_discard: bool,
     pending_close: bool,
-    artifact_worker: Option<mpsc::Receiver<Result<Artifact, String>>>,
+    artifact_worker: Option<mpsc::Receiver<Result<storage::Inspection, String>>>,
     imported_fresh: bool,
 }
 
@@ -68,6 +90,13 @@ impl DivulgeApp {
             show_help: false,
             show_activity: false,
             show_data: false,
+            show_code: false,
+            code: crate::code_view::CodeView::default(),
+            image: None,
+            code_job: None,
+            generation: 0,
+            attach_source: false,
+            close_after_job: false,
             presenter: false,
             filter: String::new(),
             status: "Workshop fixture ready. Select a node to inspect its evidence.".into(),
@@ -84,10 +113,23 @@ impl DivulgeApp {
             imported_fresh: false,
         };
         let args: Vec<String> = std::env::args().collect();
+        let mut restored = false;
+        if let Some(index) = args.iter().position(|arg| arg == "--session")
+            && let Some(path) = args.get(index + 1)
+        {
+            match storage::load(&PathBuf::from(path)) {
+                Ok(session) => {
+                    app.replace(session, false);
+                    app.save_path = Some(PathBuf::from(path));
+                    restored = true;
+                }
+                Err(error) => app.error = Some(error),
+            }
+        }
         if let Some(index) = args.iter().position(|arg| arg == "--artifact")
             && let Some(path) = args.get(index + 1)
         {
-            app.inspect(PathBuf::from(path), &cc.egui_ctx);
+            app.inspect(PathBuf::from(path), &cc.egui_ctx, restored);
         }
         app
     }
@@ -97,8 +139,8 @@ impl DivulgeApp {
     }
 
     fn request(&mut self, command: FileCommand) {
-        if self.artifact_worker.is_some() {
-            self.status = "Wait for the current file inspection to finish.".into();
+        if self.artifact_worker.is_some() || self.code_job.is_some() {
+            self.status = "Finish or cancel the active job before changing files.".into();
             return;
         }
         let replaces = matches!(
@@ -110,6 +152,12 @@ impl DivulgeApp {
     }
 
     fn replace(&mut self, session: Investigation, fresh: bool) {
+        self.generation = self.generation.wrapping_add(1);
+        self.image = None;
+        let config = self.code.config.clone();
+        self.code = crate::code_view::CodeView::default();
+        self.code.config = config;
+        self.show_code = false;
         self.session = session;
         self.attention = Attention::all(self.session.records.len());
         self.attention.select(3.min(self.session.records.len() - 1));
@@ -129,6 +177,18 @@ impl DivulgeApp {
             self.attention.select(index);
         }
         self.graph.reset(&self.session);
+        if let Some(report) = self.session.disassemblies.last() {
+            self.code.select_run(report);
+            self.show_code = true;
+            if let Some(index) = self
+                .session
+                .records
+                .iter()
+                .position(|r| matches!(r.data, RecordData::Disassembly(id) if id == report.id))
+            {
+                self.attention.select(index);
+            }
+        }
         self.playing = false;
         self.save_path = None;
         self.dirty = false;
@@ -136,15 +196,16 @@ impl DivulgeApp {
         self.filter.clear();
     }
 
-    fn inspect(&mut self, path: PathBuf, ctx: &egui::Context) {
+    fn inspect(&mut self, path: PathBuf, ctx: &egui::Context, attach: bool) {
         let (send, receive) = mpsc::channel();
         let ctx = ctx.clone();
         self.playing = false;
         self.artifact_worker = Some(receive);
+        self.attach_source = attach;
         self.status =
             "Reading and hashing the file; decoding if the exact V15 identity matches...".into();
         std::thread::spawn(move || {
-            let _ = send.send(storage::inspect_artifact(&path));
+            let _ = send.send(storage::inspect_with_image(&path));
             ctx.request_repaint();
         });
     }
@@ -166,7 +227,7 @@ impl DivulgeApp {
                     .set_title("Open an artifact for read-only inspection")
                     .pick_file()
                 {
-                    self.inspect(path, ctx);
+                    self.inspect(path, ctx, false);
                 }
             }
             FileCommand::OpenSession => {
@@ -183,6 +244,14 @@ impl DivulgeApp {
                         }
                         Err(error) => self.error = Some(error),
                     }
+                }
+            }
+            FileCommand::VerifySource => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .set_title("Verify the original artifact for this investigation")
+                    .pick_file()
+                {
+                    self.inspect(path, ctx, true);
                 }
             }
             FileCommand::Save | FileCommand::SaveAs => {
@@ -225,25 +294,174 @@ impl DivulgeApp {
         self.status = "Replaying saved records. No model or tool calls.".into();
     }
 
+    fn open_code(&mut self) {
+        self.show_code = true;
+        let report = self.session.disassemblies.iter().rev().find(|report| {
+            self.session
+                .records
+                .iter()
+                .take(self.attention.visible_count)
+                .any(|r| matches!(r.data, RecordData::Disassembly(id) if id == report.id))
+        });
+        if let Some(report) = report {
+            self.code.select_run(report);
+            if let Some(index) = self
+                .session
+                .records
+                .iter()
+                .position(|r| matches!(r.data, RecordData::Disassembly(id) if id == report.id))
+            {
+                self.attention.select(index);
+            }
+        }
+    }
+
+    fn start_disassembly(&mut self, offset: u64, length: u64, ctx: &egui::Context) {
+        if self.code_job.is_some() || self.artifact_worker.is_some() {
+            return;
+        }
+        let Some(image) = self.image.clone() else {
+            self.error =
+                Some("Verify the original artifact before running a new disassembly.".into());
+            return;
+        };
+        if self.session.disassemblies.len() >= 16 || self.session.records.len() + 3 > 200 {
+            self.error =
+                Some("This investigation has reached its bounded run/record limit.".into());
+            return;
+        }
+        let Some(id) = self
+            .session
+            .disassemblies
+            .iter()
+            .map(|r| r.id.0)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+        else {
+            self.error = Some("Run ID overflow".into());
+            return;
+        };
+        let config = self.code.config.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = cancel.clone();
+        let (send, receiver) = mpsc::channel();
+        let context = ctx.clone();
+        self.playing = false;
+        self.show_code = true;
+        self.code_job = Some(CodeJob {
+            receiver,
+            cancel,
+            generation: self.generation,
+            reading: (
+                self.selected().id,
+                self.code.selected_run,
+                self.code.selected_instruction,
+            ),
+        });
+        self.status = format!(
+            "Disassembling app.bin+0x{offset:X}, {length} bytes. You can keep reading or cancel."
+        );
+        std::thread::spawn(move || {
+            let result = pi32::disassemble(
+                &image,
+                RunId(id),
+                ImageOffset(offset),
+                length,
+                &config,
+                &worker_cancel,
+            );
+            let _ = send.send(result);
+            context.request_repaint();
+        });
+    }
+
+    fn code_action(&mut self, action: crate::code_view::Action, ctx: &egui::Context) {
+        if action.cancel
+            && let Some(job) = &self.code_job
+        {
+            job.cancel.store(true, Ordering::Relaxed);
+            self.status = "Cancelling the owned tool process; retaining available output...".into();
+        }
+        if action.verify_source {
+            self.request(FileCommand::VerifySource);
+        }
+        if let Some(id) = action.selected_run
+            && let Some(index) = self
+                .session
+                .records
+                .iter()
+                .position(|r| matches!(r.data, RecordData::Disassembly(run) if run == id))
+        {
+            self.attention.select(index);
+        }
+        if let Some((offset, length)) = action.request {
+            self.start_disassembly(offset, length, ctx);
+        }
+    }
+
     fn menus(&mut self, ui: &mut egui::Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
-                if ui.button("New workshop investigation").clicked() { self.request(FileCommand::Workshop); ui.close(); }
-                if ui.button("Open artifact...                 Ctrl+O").clicked() { self.request(FileCommand::OpenArtifact); ui.close(); }
-                if ui.button("Open investigation...   Ctrl+Shift+O").clicked() { self.request(FileCommand::OpenSession); ui.close(); }
+                if ui.button("New workshop investigation").clicked() {
+                    self.request(FileCommand::Workshop);
+                    ui.close();
+                }
+                if ui
+                    .button("Open artifact...                 Ctrl+O")
+                    .clicked()
+                {
+                    self.request(FileCommand::OpenArtifact);
+                    ui.close();
+                }
+                if ui.button("Open investigation...   Ctrl+Shift+O").clicked() {
+                    self.request(FileCommand::OpenSession);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(
+                        self.session.artifact.is_some(),
+                        egui::Button::new("Verify source for this investigation..."),
+                    )
+                    .clicked()
+                {
+                    self.request(FileCommand::VerifySource);
+                    ui.close();
+                }
                 ui.separator();
-                if ui.button("Save investigation              Ctrl+S").clicked() { self.request(FileCommand::Save); ui.close(); }
-                if ui.button("Save investigation as...").clicked() { self.request(FileCommand::SaveAs); ui.close(); }
+                if ui
+                    .button("Save investigation              Ctrl+S")
+                    .clicked()
+                {
+                    self.request(FileCommand::Save);
+                    ui.close();
+                }
+                if ui.button("Save investigation as...").clicked() {
+                    self.request(FileCommand::SaveAs);
+                    ui.close();
+                }
                 ui.separator();
-                if ui.button("Exit").clicked() { ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close); }
+                if ui.button("Exit").clicked() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
             });
             ui.menu_button("Edit", |ui| {
                 if ui.button("Copy selected insight").clicked() {
                     let selected = self.selected();
-                    ui.ctx().copy_text(format!("{}\n{}\n\nEvidence: {}\nUncertainty: {}", selected.title, selected.insight.explanation, selected.insight.observation, selected.insight.uncertainty));
+                    ui.ctx().copy_text(format!(
+                        "{}\n{}\n\nEvidence: {}\nUncertainty: {}",
+                        selected.title,
+                        selected.insight.explanation,
+                        selected.insight.observation,
+                        selected.insight.uncertainty
+                    ));
                     ui.close();
                 }
-                if ui.button("Find in investigation          Ctrl+F").clicked() { self.show_tree = true; ui.memory_mut(|memory| memory.request_focus(egui::Id::new("record_filter"))); ui.close(); }
+                if ui.button("Find in investigation          Ctrl+F").clicked() {
+                    self.show_tree = true;
+                    ui.memory_mut(|memory| memory.request_focus(egui::Id::new("record_filter")));
+                    ui.close();
+                }
             });
             ui.menu_button("View", |ui| {
                 ui.checkbox(&mut self.show_tree, "Investigation tree");
@@ -251,28 +469,89 @@ impl DivulgeApp {
                 ui.checkbox(&mut self.show_types, "Rust type annotations");
                 ui.checkbox(&mut self.show_activity, "Activity log");
                 ui.separator();
-                if ui.button("Fit graph                            F").clicked() { self.graph.fit(); ui.close(); }
-                if ui.checkbox(&mut self.presenter, "Presenter text size").changed() { ui.ctx().set_zoom_factor(if self.presenter { 1.15 } else { 1.0 }); }
+                if ui
+                    .button("Fit graph                            F")
+                    .clicked()
+                {
+                    self.graph.fit();
+                    ui.close();
+                }
+                if ui
+                    .checkbox(&mut self.presenter, "Presenter text size")
+                    .changed()
+                {
+                    ui.ctx()
+                        .set_zoom_factor(if self.presenter { 1.15 } else { 1.0 });
+                }
             });
             ui.menu_button("Investigation", |ui| {
-                if ui.button("Replay from beginning").clicked() { self.restart_replay(); ui.close(); }
-                if ui.button("Show all records").clicked() { self.playing = false; self.attention = Attention::all(self.session.records.len()); ui.close(); }
-                if ui.button("Follow latest record").clicked() { self.attention.follow(); ui.close(); }
-                if ui.button("Review next record").clicked() { self.attention.select((self.attention.selected_index + 1).min(self.attention.visible_count - 1)); ui.close(); }
+                if ui.button("Replay from beginning").clicked() {
+                    self.restart_replay();
+                    ui.close();
+                }
+                if ui.button("Show all records").clicked() {
+                    self.playing = false;
+                    self.attention = Attention::all(self.session.records.len());
+                    ui.close();
+                }
+                if ui.button("Follow latest record").clicked() {
+                    self.attention.follow();
+                    ui.close();
+                }
+                if ui.button("Review next record").clicked() {
+                    self.attention.select(
+                        (self.attention.selected_index + 1).min(self.attention.visible_count - 1),
+                    );
+                    ui.close();
+                }
             });
             ui.menu_button("Analysis", |ui| {
-                if ui.button("Identify local artifact...").clicked() { self.request(FileCommand::OpenArtifact); ui.close(); }
-                if ui.add_enabled(self.session.artifact.as_ref().is_some_and(|a| a.firmware.is_some()), egui::Button::new("Show decoded V15 data")).on_hover_text("The exact V15 package is decoded automatically on import.").clicked() { self.show_data = true; ui.close(); }
-                ui.add_enabled(false, egui::Button::new("Disassemble pi32v2")).on_hover_text("Planned: an explicit vendor tool adapter with validated instruction semantics.");
-                ui.add_enabled(false, egui::Button::new("Run AI investigation")).on_hover_text("Planned: the restricted OMP bridge and bounded tool executor.");
+                if ui.button("Identify local artifact...").clicked() {
+                    self.request(FileCommand::OpenArtifact);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(
+                        self.session
+                            .artifact
+                            .as_ref()
+                            .is_some_and(|a| a.firmware.is_some()),
+                        egui::Button::new("Show decoded V15 data"),
+                    )
+                    .on_hover_text("The exact V15 package is decoded automatically on import.")
+                    .clicked()
+                {
+                    self.show_data = true;
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(
+                        self.session.artifact.as_ref().is_some_and(|a| {
+                            a.firmware.as_ref().is_some_and(|f| f.application.is_some())
+                        }),
+                        egui::Button::new("Disassemble pi32v2"),
+                    )
+                    .clicked()
+                {
+                    self.open_code();
+                    ui.close();
+                }
+                ui.add_enabled(false, egui::Button::new("Run AI investigation"))
+                    .on_hover_text("Planned: the restricted OMP bridge and bounded tool executor.");
             });
             ui.menu_button("Model", |ui| {
                 ui.label(RichText::new("OMP is not connected in this build").color(MUTED));
                 ui.label("The model catalogue will come from your OMP installation.");
             });
             ui.menu_button("Help", |ui| {
-                if ui.button("Workshop guide").clicked() { self.show_help = true; ui.close(); }
-                if ui.button("About DIVULGE").clicked() { self.show_about = true; ui.close(); }
+                if ui.button("Workshop guide").clicked() {
+                    self.show_help = true;
+                    ui.close();
+                }
+                if ui.button("About DIVULGE").clicked() {
+                    self.show_about = true;
+                    ui.close();
+                }
             });
         });
     }
@@ -289,7 +568,7 @@ impl DivulgeApp {
                 }
                 if ui
                     .add_enabled(
-                        self.artifact_worker.is_none(),
+                        self.artifact_worker.is_none() && self.code_job.is_none(),
                         egui::Button::new("Open artifact"),
                     )
                     .clicked()
@@ -379,6 +658,16 @@ impl DivulgeApp {
                             .clicked()
                         {
                             self.attention.select(i);
+                            if let RecordData::Disassembly(id) = record.data {
+                                if let Some(report) =
+                                    self.session.disassemblies.iter().find(|r| r.id == id)
+                                {
+                                    self.code.select_run(report);
+                                }
+                                self.show_code = true;
+                            } else {
+                                self.show_code = false;
+                            }
                         }
                     });
                     ui.add_space(7.0);
@@ -442,6 +731,26 @@ impl DivulgeApp {
     }
 
     fn insight(&mut self, ui: &mut egui::Ui) {
+        if (self.show_code || matches!(self.selected().data, RecordData::Disassembly(_)))
+            && let Some(id) = self
+                .code
+                .report(&self.session, self.attention.visible_count)
+                .map(|r| r.id)
+            && let Some(run_index) = self.session.disassemblies.iter().position(|r| r.id == id)
+            && let Some(record_index) = self
+                .session
+                .records
+                .iter()
+                .position(|r| matches!(r.data, RecordData::Disassembly(run) if run == id))
+        {
+            self.dirty |= self.code.inspector(
+                ui,
+                &self.session.disassemblies[run_index],
+                &mut self.session.records[record_index].note,
+                self.show_types,
+            );
+            return;
+        }
         let response = self.inspector.show(
             ui,
             &mut self.session,
@@ -474,16 +783,27 @@ impl DivulgeApp {
     fn center(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if ui
-                .selectable_value(&mut self.show_data, false, "Graph")
+                .selectable_label(!self.show_data && !self.show_code, "Graph")
                 .clicked()
             {
+                self.show_code = false;
+                self.show_data = false;
                 self.graph.focus_result(
                     &self.session,
                     self.attention.selected_index,
                     self.attention.visible_count,
                 );
             }
-            ui.selectable_value(&mut self.show_data, true, "Data");
+            if ui
+                .selectable_label(self.show_data && !self.show_code, "Data")
+                .clicked()
+            {
+                self.show_data = true;
+                self.show_code = false;
+            }
+            if ui.selectable_label(self.show_code, "Code").clicked() {
+                self.open_code();
+            }
             ui.label(
                 RichText::new("Shared selection / click a result to inspect it")
                     .small()
@@ -492,6 +812,17 @@ impl DivulgeApp {
         });
         ui.separator();
         ui.add_space(8.0);
+        if self.show_code {
+            let action = self.code.show(
+                ui,
+                &self.session,
+                self.attention.visible_count,
+                self.image.is_some() && self.artifact_worker.is_none(),
+                self.code_job.is_some(),
+            );
+            self.code_action(action, ui.ctx());
+            return;
+        }
         if self.show_data {
             if let Some(index) = crate::data_view::table(
                 ui,
@@ -556,6 +887,11 @@ impl DivulgeApp {
                 .show(ui, &self.session, self.attention.visible_count, selected_id);
         if let Some(index) = response.selected {
             self.attention.select(index);
+            if let RecordData::Disassembly(id) = self.session.records[index].data
+                && let Some(report) = self.session.disassemblies.iter().find(|r| r.id == id)
+            {
+                self.code.select_run(report);
+            }
         }
         if response.moved {
             self.attention.following = false;
@@ -572,7 +908,7 @@ impl DivulgeApp {
             ui.label("Native Rust + egui. MIT licensed project code.");
             ui.separator();
             ui.label("Foundation build: artifact identity, evidence graph, Harness Insight, notes, save/open, and replay.");
-            ui.label("REA, pi32v2 decoding, and the OMP AI executor are planned integrations.");
+            ui.label("V15 decoding and bounded pi32v2 disassembly are available. REA and OMP integration remain planned.");
             ui.label("Repository: github.com/superposition/DIVULGE");
         });
         egui::Window::new("Workshop / From bytes to evidence").open(&mut self.show_help).default_width(530.0).show(ctx, |ui| {
@@ -629,25 +965,129 @@ impl DivulgeApp {
 
 impl eframe::App for DivulgeApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if ctx.input(|input| input.viewport().close_requested()) && self.dirty {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.pending_close = true;
+        if ctx.input(|input| input.viewport().close_requested()) {
+            if let Some(job) = &self.code_job {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                job.cancel.store(true, Ordering::Relaxed);
+                self.close_after_job = true;
+                self.status = "Cancelling the active tool before closing...".into();
+            } else if self.dirty {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.pending_close = true;
+            }
+        }
+        if let Some(job) = &self.code_job {
+            match job.receiver.try_recv() {
+                Ok(result) => {
+                    let job = self.code_job.take().unwrap();
+                    if job.generation == self.generation {
+                        match result {
+                            Ok(report) => {
+                                let focus = self.show_code
+                                    && job.reading
+                                        == (
+                                            self.selected().id,
+                                            self.code.selected_run,
+                                            self.code.selected_instruction,
+                                        );
+                                let id = report.id;
+                                let outcome = report.capture.outcome;
+                                match self.session.append_disassembly(report) {
+                                    Ok(index) => {
+                                        self.attention.visible_count = self.session.records.len();
+                                        self.graph.reset(&self.session);
+                                        self.dirty = true;
+                                        if focus {
+                                            self.attention.select(index);
+                                            self.code.select_run(
+                                                self.session.disassemblies.last().unwrap(),
+                                            );
+                                        }
+                                        self.status = format!(
+                                            "Run {}: {outcome:?}. Instructions, source mappings and raw output are recorded.",
+                                            id.0
+                                        );
+                                        self.activity.push(self.status.clone());
+                                    }
+                                    Err(error) => self.error = Some(error),
+                                }
+                            }
+                            Err(error) => {
+                                self.error = Some(error);
+                                self.status =
+                                    "Disassembly could not start; current investigation retained."
+                                        .into();
+                            }
+                        }
+                    }
+                    if self.close_after_job {
+                        self.close_after_job = false;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.code_job = None;
+                    self.error = Some(
+                        "Disassembly worker stopped unexpectedly; existing results retained."
+                            .into(),
+                    );
+                    if self.close_after_job {
+                        self.close_after_job = false;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(50))
+                }
+            }
         }
         if let Some(receiver) = &self.artifact_worker {
             match receiver.try_recv() {
                 Ok(result) => {
                     self.artifact_worker = None;
                     match result {
-                        Ok(artifact) => {
-                            self.replace(Investigation::from_artifact(artifact), true);
-                            self.dirty = true;
-                            self.status = if self.show_data {
-                                "V15 package decoded. Select a data row or graph record to inspect its fields, bytes and addresses.".into()
+                        Ok(inspection) => {
+                            if self.attach_source {
+                                let matches = self.session.artifact.as_ref().is_some_and(|old| {
+                                    old.sha256 == inspection.artifact.sha256
+                                        && old.length == inspection.artifact.length
+                                });
+                                let image_matches =
+                                    inspection.image.as_ref().is_some_and(|image| {
+                                        self.session
+                                            .artifact
+                                            .as_ref()
+                                            .and_then(|a| a.firmware.as_ref())
+                                            .and_then(|f| f.application.as_ref())
+                                            .is_some_and(|app| {
+                                                image.map().image_id.as_str() == app.sha256
+                                                    && image.map().mapped_base == app.mapped_base()
+                                                    && image.map().image_length
+                                                        == u64::from(app.entry().length)
+                                            })
+                                    });
+                                if matches && image_matches {
+                                    self.image = inspection.image.map(Arc::new);
+                                    self.imported_fresh = true;
+                                    self.status = "Original file and decoded image verified. This investigation is ready for a new bounded run.".into();
+                                } else {
+                                    self.error = Some("The selected source or decoded image does not match this saved investigation. Its existing records were retained.".into());
+                                }
                             } else {
-                                "Artifact identity recorded. Select its observation to inspect the bytes.".into()
-                            };
-                            self.activity.push(if self.show_data { "Completed exact V15 identity check, FWSC directory decode and application checks. Results are recorded; no model or target execution was invoked.".into() }
-                                else { "Completed local file hashing and bounded byte preview.".into() });
+                                self.replace(
+                                    Investigation::from_artifact(inspection.artifact),
+                                    true,
+                                );
+                                self.image = inspection.image.map(Arc::new);
+                                self.dirty = true;
+                                self.status = if self.show_data {
+                                    "V15 package decoded. Open Code to disassemble a selected application span.".into()
+                                } else {
+                                    "Artifact identity recorded. Select its observation to inspect the bytes.".into()
+                                };
+                                self.activity.push(if self.show_data { "Completed exact V15 identity check, FWSC directory decode and application checks. No model or target execution was invoked.".into() }
+                                    else { "Completed local file hashing and bounded byte preview.".into() });
+                            }
                         }
                         Err(error) => {
                             self.error = Some(error);

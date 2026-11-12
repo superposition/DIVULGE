@@ -16,7 +16,7 @@ pub struct PackageOffset(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FlashOffset(pub u64);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceSpan {
     pub offset: FileOffset,
     pub length: u64,
@@ -305,13 +305,30 @@ fn name(bytes: &[u8]) -> String {
 /// The public entry point independently gates the supplied bytes, not a saved
 /// identity DTO. Unknown firmware still supports generic byte inspection.
 pub fn decode_v15(raw: &[u8]) -> Result<FirmwareReport, String> {
+    decode_v15_with_image(raw).map(|(report, _)| report)
+}
+
+/// A runtime image can only come from a fresh exact-identity read and decode.
+/// It is deliberately not deserializable from an investigation file.
+pub fn decode_v15_with_image(
+    raw: &[u8],
+) -> Result<(FirmwareReport, Option<crate::decoded_image::DecodedImage>), String> {
     if raw.len() as u64 != V15_LENGTH || digest(raw) != V15_SHA256 {
         return Err("The V15 profile requires the exact reference length and SHA-256".into());
     }
-    decode_package(raw)
+    let (report, bytes) = decode_package_bytes(raw)?;
+    let image = bytes
+        .map(|bytes| crate::decoded_image::DecodedImage::from_verified_v15(bytes, &report))
+        .transpose()?;
+    Ok((report, image))
 }
 
+#[cfg(test)]
 fn decode_package(raw: &[u8]) -> Result<FirmwareReport, String> {
+    decode_package_bytes(raw).map(|(report, _)| report)
+}
+
+fn decode_package_bytes(raw: &[u8]) -> Result<(FirmwareReport, Option<Vec<u8>>), String> {
     if raw.len() < 960 {
         return Err("Truncated FWSC marker area".into());
     }
@@ -391,12 +408,18 @@ fn decode_package(raw: &[u8]) -> Result<FirmwareReport, String> {
         application: None,
         application_error: None,
     };
-    match decode_application(&logical, &report) {
-        Ok(app) => report.application = Some(app),
-        Err(error) => report.application_error = Some(error),
-    }
+    let bytes = match decode_application(&logical, &report) {
+        Ok((app, bytes)) => {
+            report.application = Some(app);
+            Some(bytes)
+        }
+        Err(error) => {
+            report.application_error = Some(error);
+            None
+        }
+    };
     report.validate(raw.len() as u64)?;
-    Ok(report)
+    Ok((report, bytes))
 }
 
 fn directory_entry(bytes: &[u8], offset: FlashOffset) -> Result<DirectoryEntry, String> {
@@ -426,7 +449,10 @@ fn directory_entry(bytes: &[u8], offset: FlashOffset) -> Result<DirectoryEntry, 
     })
 }
 
-fn decode_application(logical: &[u8], report: &FirmwareReport) -> Result<Application, String> {
+fn decode_application(
+    logical: &[u8],
+    report: &FirmwareReport,
+) -> Result<(Application, Vec<u8>), String> {
     let flash = report.flash().ok_or("No flash.bin entry")?;
     if !flash.checksum.matches() {
         return Err("flash.bin raw CRC did not validate".into());
@@ -497,15 +523,18 @@ fn decode_application(logical: &[u8], report: &FirmwareReport) -> Result<Applica
     if !checksum.matches() {
         return Err("app.bin CRC mismatch".into());
     }
-    Ok(Application {
-        area_header,
-        area_checksum,
-        directory,
-        app_index,
-        checksum,
-        preview: payload[..payload.len().min(256)].to_vec(),
-        sha256: digest(payload),
-    })
+    Ok((
+        Application {
+            area_header,
+            area_checksum,
+            directory,
+            app_index,
+            checksum,
+            preview: payload[..payload.len().min(256)].to_vec(),
+            sha256: digest(payload),
+        },
+        payload.to_vec(),
+    ))
 }
 
 #[cfg(test)]

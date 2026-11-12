@@ -1,0 +1,9 @@
+
+wide_call-02000120-raw.elf:	file format ELF32-pi32v2
+
+Disassembly of section .text:
+.text:
+ 2000120:    80 ff fa ff ff 00 	call 0xfffffa
+ 2000126:    80 ff f4 ff ff fe 	call -0x100000c
+ 200012c:    80 00             	rts
+

@@ -84,11 +84,11 @@ impl Investigation {
                 HarnessInsight {
                     question: "Which instructions, functions and data references explain the FM-1 behavior?".into(),
                     purpose: "Move from a validated container to evidence about the program.".into(),
-                    action: "Pending: invoke the vendor pi32v2 disassembler with an explicit address map.".into(),
-                    observation: "The application bytes and checksums are available; no disassembler has run in DIVULGE.".into(),
+                    action: "Open Code and choose a bounded span for the installed pi32v2 disassembler.".into(),
+                    observation: "At this checkpoint the application bytes and checksums are available; no disassembly result is attached yet.".into(),
                     explanation: "Decoding a package supplies input for code analysis. It does not recover functions by itself.".into(),
                     uncertainty: "Instruction boundaries, branch targets, symbols and runtime call paths remain unknown.".into(),
-                    next_step: "Implement the bounded disassembler adapter and validate its instruction-width and branch semantics.".into(),
+                    next_step: "Disassemble the first 256 application bytes, inspect their original source offsets, and follow a validated branch target.".into(),
                 });
             self.link(application, next, Relation::LeavesOpen);
         } else {

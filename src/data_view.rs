@@ -85,7 +85,7 @@ pub fn table(
             ui.add_space(10.0);
             ui.label(RichText::new("JLFS offsets are declarations: app.bin is relative to the application area; partition records use other semantics. Header CRCs do not validate partition contents.").small().color(MUTED));
             ui.add_space(10.0);
-            ui.label(RichText::new("Next evidence: pi32v2 instructions, functions and references. Disassembly is not connected yet.").small().color(MUTED));
+            ui.label(RichText::new("Next evidence: open Code to disassemble a bounded application span and inspect candidate control flow.").small().color(MUTED));
         }
     });
     selection

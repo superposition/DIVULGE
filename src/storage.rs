@@ -10,6 +10,15 @@ const MAX_SESSION_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Pure file inspection: never executes or modifies the selected artifact.
 pub fn inspect_artifact(path: &Path) -> Result<Artifact, String> {
+    inspect_with_image(path).map(|inspection| inspection.artifact)
+}
+
+pub struct Inspection {
+    pub artifact: Artifact,
+    pub image: Option<crate::decoded_image::DecodedImage>,
+}
+
+pub fn inspect_with_image(path: &Path) -> Result<Inspection, String> {
     let mut file = File::open(path).map_err(|error| error.to_string())?;
     let metadata = file.metadata().map_err(|error| error.to_string())?;
     if !metadata.is_file() || metadata.len() > MAX_ARTIFACT_BYTES {
@@ -34,11 +43,15 @@ pub fn inspect_artifact(path: &Path) -> Result<Artifact, String> {
         preview: bytes[..bytes.len().min(256)].to_vec(),
         firmware: None,
     };
-    if artifact.matches_v15_reference() {
+    let image = if artifact.matches_v15_reference() {
         // Hashing and parsing use the same read, avoiding a file-change race.
-        artifact.firmware = Some(crate::fwsc::decode_v15(&bytes)?);
-    }
-    Ok(artifact)
+        let (report, image) = crate::fwsc::decode_v15_with_image(&bytes)?;
+        artifact.firmware = Some(report);
+        image
+    } else {
+        None
+    };
+    Ok(Inspection { artifact, image })
 }
 
 pub fn load(path: &Path) -> Result<Investigation, String> {
@@ -53,7 +66,7 @@ pub fn load(path: &Path) -> Result<Investigation, String> {
     let mut investigation: Investigation =
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
     // Older files have no decoded data. Do not invent results on migration.
-    if matches!(investigation.schema_version, 1 | 2) {
+    if matches!(investigation.schema_version, 1..=3) {
         investigation.schema_version = SCHEMA_VERSION;
     }
     investigation.validate()?;

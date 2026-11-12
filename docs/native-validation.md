@@ -46,3 +46,21 @@ Still pending: the final-build visual pass, 1280x720 and 1920x1080 checks, nativ
 Built the updated native application and visually inspected its 1440x900 data view with the local V15 file. Observed eight members, four unresolved raw CRC comparisons, six JLFS directory entries, and the checked application span. The terminal pane displays original file `0x4534`, package `0x4520`, flash `0x4120`, declared address `0x02000120`, length 581,564, app CRC `5D48`, area CRC `F399`, SHA-256 and decoded bytes. Selecting USR changed the inspector to type 50, its actual offsets, lengths, hash and stored/calculated CRC `E3BC/5419`. Switching to Graph retained USR and framed its directory relationship. Returned to Data afterward.
 
 The local `inspect_firmware` example verifies the application identity and address mapping and validates a serialized report round-trip. Synthetic tests cover CRC's standard vector, marker-boundary fragmentation, truncation, out-of-bounds/overflow ranges, invalid declared sizes, exact-profile rejection and unresolved member checksums. No firmware fixture is committed. Clippy and the native build pass. The compact layout, native reopen, complete keyboard/accessibility review and broader replay interactions remain tracked checks; the native accessibility provider truncates this dense view's root tree, so this visual pass used screenshot coordinates.
+
+## pi32v2 instruction workspace
+
+2026-11-12, Windows, schema-v4 implementation of #5:
+
+- Saved the current 17-record V15 investigation through the native Save dialog, confirmed the file, closed its window, and reopened that same investigation in the updated build. Supplying its original artifact reverified and attached application bytes without replacing the records.
+- Through native Computer Use, opened Code and ran the first 256 application bytes. Observed `Completed`, 69 instruction rows, 256/256 decoded bytes and complete coverage. The listing shows original file offsets and 2/4/6-byte widths alongside addresses, bytes and tool text.
+- The first instruction is `goto 0x2` at declared `0x02000120`, original file `0x4534`. Its inspector shows target `0x02000124`, the PC-plus-width calculation, question, explanation, significance, next probe and remaining unknowns.
+- Clicked **Inspect target instruction** and observed selection move to `sp = 0x1c16fd0` at `0x02000124`, file `0x4538`, width six. The listing scrolled to it and the inspector changed together.
+- Opened Control flow and inspected the 34-block projection. A distant call initially made focus too wide; Focus block now frames the selected block at reading size, with Fit all retaining the overview. Static candidates and unresolved hardware loops remain labeled.
+- In the final build, verified the jump arrow from B00 to B02, clicked B02 and observed the inspector change to its first instruction, then clicked Focus block. Its three instructions remained readable despite the distant call destination.
+- Saved the run with Ctrl+S; confirmed schema 4, 20 records, one run and 69 rows on disk. Reopened that save in the native application and observed the same listing and retained result. Only one DIVULGE window is kept open.
+
+The headless adapter acceptance run also produced 34 blocks, 45 candidate edges and zero gaps, then validated a serialized/deserialized report. The synthetic vendor-tool suite checked 28 branch/call pairs at two bases in both linked and symbol-free carriers; see [the detailed evidence](pi32v2-validation.md). No firmware or vendor executable is committed.
+
+Validation: `cargo test --locked --all-targets` passes 21 standard tests; three host-dependent tests are ignored by that command and were separately run successfully. Those tests exercise cancellation of an owned child process group, partial output after failure/SIGSEGV, output caps and the 15-second deadline. `cargo clippy --locked --all-targets -- -D warnings`, formatting and the native build pass.
+
+Remaining UI checks: final compact and large-window layouts, broader keyboard/accessibility coverage, graph scaling with larger selections, and live attention preservation under slow jobs. Save/reopen is now visually confirmed; a dedicated note-edit round trip remains in the broader foundation checklist. OMP/REA, firmware execution and flashing were not invoked.

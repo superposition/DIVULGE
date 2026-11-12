@@ -1,0 +1,20 @@
+
+flow-02000120-raw.elf:	file format ELF32-pi32v2
+
+Disassembly of section .text:
+.text:
+ 2000120:    04 85             	goto 0xa
+ 2000122:    c7 ff 78 56 34 12 	r7 = 0x12345678
+ 2000128:    30 e1 fd 1f       	r0 = r1 + -0x3
+ 200012c:    00 43             	if (r0 == 0) goto 0x6
+ 200012e:    01 fe fd 01       	ifs (r1 > 0x0) goto -0x6
+ 2000132:    f7 96             	goto -0x14
+ 2000134:    01 85             	call 0xa
+ 2000136:    71 94             	call -0x18
+ 2000138:    c2 00             	call r2
+ 200013a:    d3 00             	goto r3
+ 200013c:    00 04             	pc = [sp++]
+ 200013e:    80 00             	rts
+ 2000140:    08 83             	r0 = r0 + 0x3
+ 2000142:    80 00             	rts
+

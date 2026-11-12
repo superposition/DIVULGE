@@ -1,0 +1,14 @@
+
+loops-02000120-raw.elf:	file format ELF32-pi32v2
+
+Disassembly of section .text:
+.text:
+ 2000120:    10 03             	rep 0x4 r0 {
+ 2000122:    19 81             		r1 = r1 + 0x1
+ 2000124:    2a 82             		r2 = r2 + 0x2
+                               	}
+ 2000126:    00 82             	rep 0x2 0x3 {
+ 2000128:    3b 81             		r3 = r3 + 0x1
+                               	}
+ 200012a:    80 00             	rts
+

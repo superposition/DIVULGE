@@ -16,10 +16,12 @@ The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 archite
 - Local artifact hashing, bounded byte previews, and comparison with the configured V15 identity.
 - Exact-V15 FWSC decoding: eight package entries, header and directory CRCs, raw member CRC comparisons, SFC/JLFS application decoding, and source mappings back to the original file.
 - A compact **Data** view shares selection with **Graph**. Inspect field locations and Rust types, sizes, hashes, raw/decoded bytes, flash offsets, and the application's declared address. **Focus result** frames a record and its immediate evidence relationships.
+- A **Code** view runs the installed vendor pi32v2 disassembler on selected application bytes. It shows 2/4/6-byte instructions, original source offsets, a conservative basic-block graph, and instruction questions, explanations and next probes.
+- Each run retains its tool identity, version, flags, exact input, raw outputs, coverage and outcome. Unknown transfers and hardware loops remain unresolved. Cancellation, timeout and tool failure preserve partial output.
 - Notes, versioned investigation save/open, and replay without running tools.
 - A runnable Rust workshop example using synthetic bytes.
 
-**pi32v2 disassembly, REA integration, and OMP-driven investigation are not connected yet.** Package decoding runs locally and deterministically. The built-in workshop is labeled synthetic; it does not present simulated model output as real analysis. The app does not execute or flash firmware.
+**REA integration and OMP-driven investigation are not connected yet.** Package decoding and the vendor disassembler run locally. The built-in workshop is labeled synthetic; instruction explanations are deterministic descriptions of the retained evidence. The app does not execute or flash firmware.
 
 ## Run
 
@@ -38,9 +40,9 @@ Open an artifact through **File > Open artifact**, or provide a path:
 cargo run --locked -- --artifact /path/to/your/firmware.fwsc
 ```
 
-Artifact reads are limited to 128 MiB in this foundation build. Investigation JSON files are limited to 8 MiB, 200 records, and 1,000 edges while larger-graph work is pending. Saved investigations include a bounded byte preview; inspect their contents before choosing to share them. Machine-specific source paths and model credentials are not stored in them.
+Artifact reads are limited to 128 MiB in this foundation build. Investigation JSON files are limited to 8 MiB, 200 records, 1,000 edges and 16 disassembly runs. Each run selects 2–4096 bytes and retains at most 256 KiB per output stream. Saves contain selected bytes, previews, raw tool output and the tool's local executable path; review them before sharing. Model credentials and the source artifact's local path are not stored.
 
-Investigation schema v3 preserves question plans, ownership links, and structured firmware results with bounded previews. Version 1 and 2 files still open; missing plans and decoded results remain absent. Reopening a recorded report does not rehash or revalidate its original file. Older builds cannot read v3 saves.
+Investigation schema v4 adds image-qualified spans and attributable disassembly reports. Version 1–3 files still open; missing evidence remains absent. Reopening a report validates its recorded projections without running tools or rehashing the original file. **File > Verify source** reattaches freshly verified application bytes without replacing notes or records. Older builds cannot read v4 saves.
 
 For a local parser acceptance check without opening another window:
 
@@ -49,6 +51,21 @@ cargo run --locked --example inspect_firmware -- /path/to/FM-1_015.fwsc
 ```
 
 The V15 case produces 699,936 logical package bytes after removing 20 markers, eight entries, and a 581,564-byte application with verified CRC. The application starts at original file offset `0x4534`, flash offset `0x4120`, and declared address `0x02000120`. A declared address is static metadata. Four members have unexplained raw CRC differences; these remain unresolved instead of being labeled corrupt. The format, area offset, and SFC key are supplied by the [MIT reference implementation](THIRD_PARTY.md).
+
+## Disassemble a selection
+
+On Windows, install the vendor pi32v2 tools and Python 3 in WSL. **Code > Tool / scope** selects the distribution (default `Ubuntu-22.04`) and executable. An empty executable field discovers only `~/.jieli/toolchain/pi32v2/bin/objdump` inside that distribution. The tools are supplied separately; there is no automatic download. The helper also supports a native Linux host, which has not had desktop validation.
+
+Open V15, choose **Code**, leave the initial `app.bin+0x0 / 256 bytes`, and click **Disassemble selection**. Select an instruction to inspect its bytes and rationale, follow **Inspect target instruction**, or switch to **Control flow**. The first local V15 selection produced 69 instruction rows, 34 blocks and no uncovered bytes. Its first jump resolves from `0x02000120` to `0x02000124`.
+
+Only the validated tool hash and exact flags enable numeric target interpretation. The [synthetic fixtures and validation notes](docs/pi32v2-validation.md) explain the checked displacement convention, gaps, hardware loops and limits. Static edges are candidates, not observed execution or recovered function names.
+
+The same adapter can run without another window:
+
+```sh
+cargo run --locked --example disassemble -- /path/to/FM-1_015.fwsc
+cargo run --locked -- --session investigation.divulge.json --artifact /path/to/FM-1_015.fwsc
+```
 
 ## Workshop
 

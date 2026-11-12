@@ -1,0 +1,13 @@
+
+far-02000120-raw.elf:	file format ELF32-pi32v2
+
+Disassembly of section .text:
+.text:
+ 2000120:    80 ea fe 7f       	call 0xfffc
+ 2000124:    c0 ea fc 7f       	goto 0xfff8
+ 2000128:    00 ff 00 00 f9 7f 	if (r0 == 0x0) goto 0xfff2
+ 200012e:    0c ff 00 10 76 80 	ifs (r1 > 0x0) goto -0xff14
+ 2000134:    bf ea 74 80       	call -0xff18
+ 2000138:    ff ea 72 80       	goto -0xff1c
+ 200013c:    80 00             	rts
+

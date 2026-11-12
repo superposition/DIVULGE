@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 pub const V15_SHA256: &str = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a";
 pub const V15_LENGTH: u64 = 699_956;
 
@@ -47,6 +47,7 @@ pub enum RecordData {
     },
     Observation(Observation),
     Firmware(crate::fwsc::FirmwareView),
+    Disassembly(crate::pi32::RunId),
     Explanation {
         basis: Basis,
         evidence: Vec<RecordId>,
@@ -63,6 +64,7 @@ impl RecordData {
             Self::Probe { .. } => "Probe",
             Self::Observation(_) => "Observation",
             Self::Firmware(_) => "Decoded data",
+            Self::Disassembly(_) => "Instructions",
             Self::Explanation { .. } => "Explanation",
             Self::Unknown { .. } => "Unknown",
         }
@@ -73,6 +75,9 @@ impl RecordData {
             Self::Question => "RecordData::Question",
             Self::Probe { .. } => "RecordData::Probe { operation: String }",
             Self::Observation(_) => "Observation { offset: FileOffset, bytes: Vec<u8>, .. }",
+            Self::Disassembly(_) => {
+                "DisassemblyReport { id: RunId, scope: ImageSpan, instructions: Vec<Instruction>, coverage: Coverage, .. }"
+            }
             Self::Firmware(_) => {
                 "FirmwareView -> PackageHeader / PackageEntry / Application; FileOffset != PackageOffset != FlashOffset != MappedAddress"
             }
@@ -183,6 +188,8 @@ pub struct Investigation {
     /// Append order is the replay order, independent of graph layout.
     pub records: Vec<Record>,
     pub edges: Vec<Edge>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disassemblies: Vec<crate::pi32::DisassemblyReport>,
 }
 
 impl Investigation {
@@ -195,6 +202,44 @@ impl Investigation {
         }
         if self.records.is_empty() || self.records.len() > 200 || self.edges.len() > 1_000 {
             return Err("This foundation supports 1-200 records and at most 1,000 edges".into());
+        }
+        if self.disassemblies.len() > 16 {
+            return Err("An investigation supports at most 16 bounded disassembly runs".into());
+        }
+        let mut runs = HashSet::new();
+        for run in &self.disassemblies {
+            if !runs.insert(run.id) {
+                return Err("Disassembly run IDs must be unique".into());
+            }
+            run.validate()?;
+            let artifact = self
+                .artifact
+                .as_ref()
+                .ok_or("Disassembly has no artifact")?;
+            let firmware = artifact
+                .firmware
+                .as_ref()
+                .ok_or("Disassembly has no decoded firmware")?;
+            firmware.validate(artifact.length)?;
+            let app = firmware
+                .application
+                .as_ref()
+                .ok_or("Disassembly has no application")?;
+            if run.map.artifact_id.as_str() != artifact.sha256
+                || run.map.image_id.as_str() != app.sha256
+                || run.map.image_length != u64::from(app.entry().length)
+                || run.map.mapped_base != app.mapped_base()
+                || run.map.package_base.0
+                    != firmware
+                        .flash()
+                        .ok_or("Disassembly has no flash parent")?
+                        .offset
+                        .0
+                        + app.flash_offset().0
+                || run.map.package_length != u64::from(firmware.header.length)
+            {
+                return Err("Disassembly map belongs to another artifact/image".into());
+            }
         }
         let mut ids = HashSet::new();
         for record in &self.records {
@@ -253,6 +298,11 @@ impl Investigation {
             {
                 return Err("Decoded record references missing firmware data".into());
             }
+            if let RecordData::Disassembly(id) = record.data
+                && !runs.contains(&id)
+            {
+                return Err("Instruction record references a missing run".into());
+            }
             if let RecordData::Explanation { evidence, .. } = &record.data {
                 if evidence.is_empty() {
                     return Err("An explanation must cite an observation".into());
@@ -262,7 +312,9 @@ impl Investigation {
                         candidate.id == *id
                             && matches!(
                                 candidate.data,
-                                RecordData::Observation(_) | RecordData::Firmware(_)
+                                RecordData::Observation(_)
+                                    | RecordData::Firmware(_)
+                                    | RecordData::Disassembly(_)
                             )
                     }) {
                         return Err("Explanation references a missing observation".into());
@@ -446,6 +498,7 @@ impl Investigation {
             objective: "Learn the Rust types behind an investigation, then follow their evidence in the graph.".into(),
             origin: Origin::WorkshopFixture,
             artifact: None,
+            disassemblies: Vec::new(),
             records,
             edges: vec![
                 Edge { from: RecordId(1), to: RecordId(2), relation: Relation::Investigates },

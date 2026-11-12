@@ -1,1 +1,3 @@
 * text=auto eol=lf
+# Retain exact vendor-tool fixture output, including continuation indentation.
+tests/fixtures/pi32v2/*.stdout -text whitespace=-blank-at-eof,-space-before-tab

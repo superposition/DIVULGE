@@ -40,7 +40,7 @@ pub fn kind_color(data: &RecordData) -> Color32 {
     match data {
         RecordData::Question => Color32::from_rgb(138, 178, 239),
         RecordData::Probe { .. } => Color32::from_rgb(174, 158, 220),
-        RecordData::Observation(_) | RecordData::Firmware(_) => ACCENT,
+        RecordData::Observation(_) | RecordData::Firmware(_) | RecordData::Disassembly(_) => ACCENT,
         RecordData::Explanation { .. } => Color32::from_rgb(218, 197, 133),
         RecordData::Unknown { .. } => Color32::from_rgb(225, 163, 117),
     }
@@ -51,6 +51,12 @@ impl GraphView {
         self.positions = (0..session.records.len())
             .map(|i| {
                 if session.records.len() > 8 {
+                    if i >= 17 {
+                        return Pos2::new(
+                            1920.0 + ((i - 17) % 3) as f32 * 320.0,
+                            ((i - 17) / 3) as f32 * 160.0,
+                        );
+                    }
                     match &session.records[i].data {
                         RecordData::Firmware(divulge::fwsc::FirmwareView::Entry(index)) => {
                             Pos2::new(1280.0, *index as f32 * 136.0)
