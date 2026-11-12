@@ -1,0 +1,21 @@
+name: Implementation ticket
+description: A bounded, demonstrable change to DIVULGE
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: User-visible behavior
+      description: What should someone be able to do after this change?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Include evidence, failure cases, and a native interaction where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and scope boundaries

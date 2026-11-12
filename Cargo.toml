@@ -1,0 +1,22 @@
+[package]
+name = "divulge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+description = "A native investigation workbench that makes AI-assisted reverse engineering understandable"
+license = "MIT"
+repository = "https://github.com/superposition/DIVULGE"
+
+[dependencies]
+eframe = { version = "=0.35.0", default-features = false, features = ["default_fonts", "glow", "accesskit", "x11", "wayland"] }
+rfd = "0.15.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10.9"
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+lto = "thin"
+strip = true

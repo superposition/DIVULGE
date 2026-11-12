@@ -1,0 +1,14 @@
+/target/
+/tmp/
+/output/
+/captures/
+*.divulge.json
+*.fwsc
+*.bin
+*.elf
+.env
+.env.*
+*.key
+*.pem
+# Unrelated pre-existing report in this workspace.
+/ls-zero-reverse-engineering.pdf
