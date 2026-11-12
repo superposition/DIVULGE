@@ -107,6 +107,7 @@ The full PDF is a planned deliverable. Its outline, timings, livecoding checkpoi
 ## Project map
 
 - [Architecture and product decisions](docs/architecture.md)
+- [Checked domain types and identity rules](docs/domain.md)
 - [Milestones and tickets](docs/roadmap.md)
 - [Native UI verification](docs/native-validation.md)
 - [Contributing](CONTRIBUTING.md)

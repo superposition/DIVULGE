@@ -128,7 +128,7 @@ impl Investigation {
             data,
             insight,
             note: String::new(),
-            question_id: Some(owner),
+            question_id: Some(QuestionId::new(owner.0).expect("nonzero question record")),
             question_plan: None,
         });
         id

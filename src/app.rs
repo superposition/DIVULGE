@@ -789,6 +789,16 @@ impl DivulgeApp {
             self.attention.select(index);
         }
         self.dirty |= response.note_changed;
+        if let Some(index) = response.created_record {
+            self.dirty = true;
+            self.attention.visible_count = self.session.records.len();
+            self.attention.select(index);
+            self.graph.reset(&self.session);
+            self.graph
+                .focus_result(&self.session, index, self.attention.visible_count);
+            self.show_code = false;
+            self.show_data = false;
+        }
     }
 
     fn focus_question(&mut self) {

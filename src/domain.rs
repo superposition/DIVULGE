@@ -1,7 +1,8 @@
+pub use crate::evidence::{InsightId, ObservationId, QuestionId};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 pub const V15_SHA256: &str = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a";
 pub const V15_LENGTH: u64 = 699_956;
 
@@ -51,8 +52,9 @@ pub enum RecordData {
     Rea(String),
     Explanation {
         basis: Basis,
-        evidence: Vec<RecordId>,
+        evidence: Vec<ObservationId>,
     },
+    TypeHypothesis(crate::evidence::TypeHypothesis),
     Unknown {
         next_probe: String,
     },
@@ -68,6 +70,7 @@ impl RecordData {
             Self::Disassembly(_) => "Instructions",
             Self::Rea(_) => "REA evidence",
             Self::Explanation { .. } => "Explanation",
+            Self::TypeHypothesis(_) => "Type hypothesis",
             Self::Unknown { .. } => "Unknown",
         }
     }
@@ -87,7 +90,10 @@ impl RecordData {
                 "FirmwareView -> PackageHeader / PackageEntry / Application; FileOffset != PackageOffset != FlashOffset != MappedAddress"
             }
             Self::Explanation { .. } => {
-                "RecordData::Explanation { basis: Basis, evidence: Vec<RecordId> }"
+                "RecordData::Explanation { basis: Basis, evidence: Vec<ObservationId> }"
+            }
+            Self::TypeHypothesis(_) => {
+                "TypeHypothesis { proposed_type, evidence: Vec<ObservationId>, counter_evidence, limitation } / inference"
             }
             Self::Unknown { .. } => "RecordData::Unknown { next_probe: String }",
         }
@@ -125,7 +131,7 @@ pub struct Record {
     pub note: String,
     /// Explicit question ownership; an evidence edge alone does not imply ownership.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub question_id: Option<RecordId>,
+    pub question_id: Option<QuestionId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub question_plan: Option<QuestionPlan>,
 }
@@ -137,6 +143,7 @@ pub enum Relation {
     Supports,
     LeavesOpen,
     Suggests,
+    Contradicts,
 }
 
 impl Relation {
@@ -147,6 +154,7 @@ impl Relation {
             Self::Supports => "supports",
             Self::LeavesOpen => "leaves open",
             Self::Suggests => "suggests",
+            Self::Contradicts => "contradicts",
         }
     }
 }
@@ -247,7 +255,7 @@ impl Investigation {
                     !self
                         .records
                         .iter()
-                        .any(|r| r.id == *id && self.is_evidence(r))
+                        .any(|r| r.id == id.record() && self.is_evidence(r))
                 }) {
                     return Err("AI proposal has missing evidence".into());
                 }
@@ -337,9 +345,9 @@ impl Investigation {
                 return Err("A question plan requires a question, rationale, bounded method, outcome, and answer criteria".into());
             }
             if let Some(question_id) = record.question_id
-                && (question_id == record.id
+                && (question_id.record() == record.id
                     || !self.records.iter().any(|question| {
-                        question.id == question_id
+                        question.id == question_id.record()
                             && question.question_plan.is_some()
                             && matches!(
                                 question.data,
@@ -373,6 +381,9 @@ impl Investigation {
             {
                 return Err("Instruction record references a missing run".into());
             }
+            if let RecordData::TypeHypothesis(hypothesis) = &record.data {
+                hypothesis.validate(self)?;
+            }
             if let RecordData::Explanation { evidence, .. } = &record.data {
                 if evidence.is_empty() {
                     return Err("An explanation must cite an observation".into());
@@ -381,7 +392,7 @@ impl Investigation {
                     if !self
                         .records
                         .iter()
-                        .any(|candidate| candidate.id == *id && self.is_evidence(candidate))
+                        .any(|candidate| candidate.id == id.record() && self.is_evidence(candidate))
                     {
                         return Err("Explanation references a missing observation".into());
                     }
@@ -432,7 +443,7 @@ impl Investigation {
         if record.question_plan.is_some() {
             Some(record)
         } else {
-            self.record(record.question_id?)
+            self.record(record.question_id?.record())
                 .filter(|question| question.question_plan.is_some())
         }
     }
@@ -474,7 +485,7 @@ impl Investigation {
                 "Little-endian u16; meaning still unknown.",
                 RecordData::Explanation {
                     basis: Basis::Derived,
-                    evidence: vec![RecordId(3)],
+                    evidence: vec![ObservationId::new(3).unwrap()],
                 },
             ),
             (
@@ -528,7 +539,7 @@ impl Investigation {
                 Record {
                     id: RecordId(i as u64 + 1), title: title.into(), summary: summary.into(),
                     data, insight: step, note: String::new(),
-                    question_id: match i { 1..=3 => Some(RecordId(1)), _ => None },
+                    question_id: match i { 1..=3 => Some(QuestionId::new(1).unwrap()), _ => None },
                     question_plan: match i {
                         0 => Some(QuestionPlan {
                             why: "The same bytes can encode a number, text, or part of an instruction. Choosing a type too early makes an assumption look like evidence.".into(),
@@ -627,7 +638,7 @@ impl Investigation {
                 },
                 insight: insight.clone(),
                 note: String::new(),
-                question_id: Some(RecordId(1)),
+                question_id: Some(QuestionId::new(1).unwrap()),
                 question_plan: None,
             },
             Record {
@@ -641,7 +652,7 @@ impl Investigation {
                 }),
                 insight: insight.clone(),
                 note: String::new(),
-                question_id: Some(RecordId(1)),
+                question_id: Some(QuestionId::new(1).unwrap()),
                 question_plan: None,
             },
             Record {
@@ -654,11 +665,11 @@ impl Investigation {
                 summary: "An identity check, not a decoded program.".into(),
                 data: RecordData::Explanation {
                     basis: Basis::Derived,
-                    evidence: vec![RecordId(3)],
+                    evidence: vec![ObservationId::new(3).unwrap()],
                 },
                 insight: insight.clone(),
                 note: String::new(),
-                question_id: Some(RecordId(1)),
+                question_id: Some(QuestionId::new(1).unwrap()),
                 question_plan: None,
             },
             Record {
@@ -818,7 +829,7 @@ mod tests {
         let mut investigation = Investigation::workshop();
         investigation.records[3].data = RecordData::Explanation {
             basis: Basis::Derived,
-            evidence: vec![RecordId(1)],
+            evidence: vec![ObservationId::new(1).unwrap()],
         };
         assert!(investigation.validate().is_err());
     }
@@ -862,9 +873,9 @@ mod tests {
                 .enables
                 .is_empty()
         );
-        restored.records[3].question_id = Some(RecordId(3));
+        restored.records[3].question_id = Some(QuestionId::new(3).unwrap());
         assert!(restored.validate().is_err());
-        restored.records[3].question_id = Some(RecordId(1));
+        restored.records[3].question_id = Some(QuestionId::new(1).unwrap());
         restored.records[0]
             .question_plan
             .as_mut()

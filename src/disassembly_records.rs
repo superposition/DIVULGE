@@ -59,8 +59,8 @@ impl Investigation {
                     answered_when: "Every accepted instruction has matching source bytes, a checked address and explicit coverage; unsupported transfers and missing bytes are recorded.".into(),
                     if_not: "Retain partial output, gaps and failure diagnostics. Change the scope or validate the unsupported instruction form before claiming a destination.".into(),
                 }), question_insight),
-            record(p, "Disassemble selected bytes".into(), format!("pi32v2 / r3 / {} bytes", report.scope.length), RecordData::Probe { operation: "vendor pi32v2 disassembler over derived ELF32".into() }, Some(q), None, probe_insight),
-            record(result, format!("{} instruction rows", report.instructions.len()), format!("0x{:08X} / {:?} coverage", address.0, report.coverage), RecordData::Disassembly(report.id), Some(q), None, insight),
+            record(p, "Disassemble selected bytes".into(), format!("pi32v2 / r3 / {} bytes", report.scope.length), RecordData::Probe { operation: "vendor pi32v2 disassembler over derived ELF32".into() }, Some(QuestionId::new(q.0)?), None, probe_insight),
+            record(result, format!("{} instruction rows", report.instructions.len()), format!("0x{:08X} / {:?} coverage", address.0, report.coverage), RecordData::Disassembly(report.id), Some(QuestionId::new(q.0)?), None, insight),
         ]);
         self.edges.push(Edge {
             from: q,

@@ -1,7 +1,10 @@
 //! Terminal-style evidence inspection. Scalar views are interpretations, not recovered types.
 use crate::data_view::ByteView;
 use crate::graph::{ACCENT, kind_color};
-use divulge::domain::{Investigation, Origin, QuestionPlan, RecordData, RecordId};
+use divulge::domain::{
+    InsightId, Investigation, ObservationId, Origin, QuestionPlan, RecordData, RecordId,
+};
+use divulge::evidence::{ByteOrder, ScalarViews, TypeHypothesis};
 use eframe::egui::{self, Color32, FontId, RichText};
 
 pub const SURFACE: Color32 = Color32::from_rgb(10, 15, 18);
@@ -9,24 +12,24 @@ const OUTPUT: Color32 = Color32::from_rgb(194, 211, 207);
 const DIM: Color32 = Color32::from_rgb(115, 143, 143);
 const AMBER: Color32 = Color32::from_rgb(224, 177, 113);
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum ByteOrder {
-    #[default]
-    Little,
-    Big,
-}
-
 #[derive(Default)]
 pub struct Inspector {
     byte_record: Option<RecordId>,
     byte_index: usize,
     byte_order: ByteOrder,
+    hypothesis_record: Option<RecordId>,
+    proposed_type: String,
+    rationale: String,
+    limitation: String,
+    counter_evidence: Vec<ObservationId>,
+    hypothesis_error: String,
 }
 
 #[derive(Default)]
 pub struct Response {
     pub selected_record: Option<usize>,
     pub note_changed: bool,
+    pub created_record: Option<usize>,
 }
 
 impl Inspector {
@@ -45,20 +48,24 @@ impl Inspector {
         let firmware_view = match &record.data {
             RecordData::Firmware(view) => Some(*view),
             RecordData::Explanation { evidence, .. } => evidence.iter().find_map(|id| {
-                session.record(*id).and_then(|source| match source.data {
-                    RecordData::Firmware(view) => Some(view),
-                    _ => None,
-                })
+                session
+                    .record(id.record())
+                    .and_then(|source| match source.data {
+                        RecordData::Firmware(view) => Some(view),
+                        _ => None,
+                    })
             }),
             _ => None,
         };
         let observation = match &record.data {
             RecordData::Observation(bytes) => Some((record.id, bytes.clone())),
             RecordData::Explanation { evidence, .. } => evidence.iter().find_map(|id| {
-                session.record(*id).and_then(|source| match &source.data {
-                    RecordData::Observation(bytes) => Some((*id, bytes.clone())),
-                    _ => None,
-                })
+                session
+                    .record(id.record())
+                    .and_then(|source| match &source.data {
+                        RecordData::Observation(bytes) => Some((id.record(), bytes.clone())),
+                        _ => None,
+                    })
             }),
             _ => None,
         };
@@ -71,7 +78,10 @@ impl Inspector {
         ui.horizontal(|ui| {
             ui.label(mono("HARNESS INSIGHT", ACCENT).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(mono(format!("#{:04}", record.id.0), DIM));
+                ui.label(mono(
+                    format!("#{:04}", InsightId::new(record.id.0).unwrap().value()),
+                    DIM,
+                ));
             });
         });
         ui.label(mono(
@@ -115,7 +125,7 @@ impl Inspector {
                         for (index, related) in
                             session.records.iter().take(visible_count).enumerate()
                         {
-                            if related.question_id == Some(question.id) {
+                            if related.question_id.is_some_and(|id|id.record()==question.id) {
                                 linked_count += 1;
                                 if ui
                                     .link(mono(
@@ -238,13 +248,21 @@ impl Inspector {
                     Color32::from_rgb(218, 197, 133),
                 );
 
+                if let RecordData::TypeHypothesis(hypothesis)=&record.data {
+                    ui.label(mono(format!("Proposed target type: {} / inference",hypothesis.proposed_type),AMBER));
+                    for (label,ids) in [("supporting evidence",&hypothesis.evidence),("counter-evidence",&hypothesis.counter_evidence)]{
+                        ui.label(mono(label,DIM));
+                        if ids.is_empty(){ui.label("None recorded; this does not prove absence.");}
+                        for id in ids { if let Some(index)=session.records.iter().take(visible_count).position(|r|r.id==id.record()) && ui.link(format!("#{} / {}",id.value(),session.records[index].title)).clicked(){response.selected_record=Some(index);} }
+                    }
+                }
                 if let RecordData::Explanation { evidence, .. } = &record.data {
                     ui.label(mono("@ evidence", ACCENT));
                     for id in evidence {
-                        if let Some(index) = session.records.iter().position(|r| r.id == *id)
+                        if let Some(index) = session.records.iter().position(|r| r.id == id.record())
                             && ui
                                 .link(mono(
-                                    format!("[{:04}] {}", id.0, session.records[index].title),
+                                    format!("[{:04}] {}", id.value(), session.records[index].title),
                                     ACCENT,
                                 ))
                                 .clicked()
@@ -267,9 +285,9 @@ impl Inspector {
                     ));
                     if let Some(proposal) = &run.proposal {
                         for id in &proposal.evidence {
-                            if let Some(index) = session.records.iter().position(|r| r.id == *id)
+                            if let Some(index) = session.records.iter().position(|r| r.id == id.record())
                                 && ui
-                                    .link(mono(format!("Evidence #{:04}", id.0), ACCENT))
+                                    .link(mono(format!("Evidence #{:04}", id.value()), ACCENT))
                                     .clicked()
                             {
                                 response.selected_record = Some(index);
@@ -328,6 +346,23 @@ impl Inspector {
                     });
                 }
                 ui.add_space(12.0);
+                if session.is_evidence(&record) {
+                    if self.hypothesis_record!=Some(record.id) {
+                        self.hypothesis_record=Some(record.id); self.proposed_type.clear(); self.rationale.clear(); self.counter_evidence.clear(); self.hypothesis_error.clear();
+                        self.limitation="A chosen interpretation does not establish an original source type, packing or runtime use.".into();
+                    }
+                    ui.collapsing("Record a type hypothesis",|ui|{
+                        ui.label("Proposed target type");ui.text_edit_singleline(&mut self.proposed_type);
+                        ui.label("Why these observations suggest it");ui.text_edit_multiline(&mut self.rationale);
+                        ui.label("What remains unproved");ui.text_edit_multiline(&mut self.limitation);
+                        ui.label(format!("Supporting evidence: #{}",record.id.0));
+                        ui.collapsing("Counter-evidence",|ui|{for candidate in session.records.iter().take(visible_count).filter(|r|session.is_evidence(r)&&r.id!=record.id){let id=ObservationId::new(candidate.id.0).unwrap();let mut checked=self.counter_evidence.contains(&id);if ui.checkbox(&mut checked,format!("#{} {}",id.value(),candidate.title)).changed(){if checked {self.counter_evidence.push(id);}else{self.counter_evidence.retain(|i|i!=&id);}}}});
+                        if ui.add_enabled(!self.proposed_type.trim().is_empty()&&!self.rationale.trim().is_empty()&&!self.limitation.trim().is_empty(),egui::Button::new("Record hypothesis with evidence")).clicked(){
+                            match session.append_type_hypothesis(TypeHypothesis{proposed_type:self.proposed_type.clone(),rationale:self.rationale.clone(),evidence:vec![ObservationId::new(record.id.0).unwrap()],counter_evidence:self.counter_evidence.clone(),limitation:self.limitation.clone()}){Ok(index)=>response.created_record=Some(index),Err(error)=>self.hypothesis_error=error}
+                        }
+                        if !self.hypothesis_error.is_empty(){ui.label(&self.hypothesis_error);}
+                    });
+                }
                 ui.label(mono("# analyst note", ACCENT));
                 response.note_changed = ui
                     .add(
@@ -459,16 +494,9 @@ impl Inspector {
             ui.selectable_value(&mut self.byte_order, ByteOrder::Little, "little endian");
             ui.selectable_value(&mut self.byte_order, ByteOrder::Big, "big endian");
         });
-        let u16_value =
-            window::<2>(observation.bytes, self.byte_index).map(|bytes| match self.byte_order {
-                ByteOrder::Little => u16::from_le_bytes(bytes),
-                ByteOrder::Big => u16::from_be_bytes(bytes),
-            });
-        let u32_value =
-            window::<4>(observation.bytes, self.byte_index).map(|bytes| match self.byte_order {
-                ByteOrder::Little => u32::from_le_bytes(bytes),
-                ByteOrder::Big => u32::from_be_bytes(bytes),
-            });
+        let values = ScalarViews::from_bytes(observation.bytes, self.byte_index, self.byte_order);
+        let u16_value = values.u16_value;
+        let u32_value = values.u32_value;
         line(
             ui,
             "u8 / i8",
@@ -495,15 +523,16 @@ impl Inspector {
             "f32",
             &u32_value.map_or_else(
                 || "-- / need 4 observed bytes".into(),
-                |bits| format!("{:e} / bits 0x{bits:08X}", f32::from_bits(bits)),
+                |bits| {
+                    format!(
+                        "{:e} / bits 0x{bits:08X}",
+                        divulge::evidence::F32Bits(bits).value()
+                    )
+                },
             ),
         );
         ui.label(mono("Chosen views, not recovered source types.", AMBER).size(10.0));
     }
-}
-
-fn window<const N: usize>(bytes: &[u8], start: usize) -> Option<[u8; N]> {
-    bytes.get(start..start.checked_add(N)?)?.try_into().ok()
 }
 
 fn mono(text: impl Into<String>, color: Color32) -> RichText {
@@ -577,10 +606,25 @@ mod tests {
     #[test]
     fn scalar_view_requires_the_full_selected_range() {
         let bytes = [0xff, 0x34, 0x12];
-        assert_eq!(window::<2>(&bytes, 1).map(u16::from_le_bytes), Some(4660));
-        assert_eq!(window::<2>(&bytes, 1).map(u16::from_be_bytes), Some(13330));
-        assert_eq!(window::<2>(&bytes, 2), None);
-        assert_eq!(window::<4>(&bytes, 0), None);
-        assert_eq!(window::<2>(&bytes, usize::MAX), None);
+        assert_eq!(
+            ScalarViews::from_bytes(&bytes, 1, ByteOrder::Little).u16_value,
+            Some(4660)
+        );
+        assert_eq!(
+            ScalarViews::from_bytes(&bytes, 1, ByteOrder::Big).u16_value,
+            Some(13330)
+        );
+        assert_eq!(
+            ScalarViews::from_bytes(&bytes, 2, ByteOrder::Little).u16_value,
+            None
+        );
+        assert_eq!(
+            ScalarViews::from_bytes(&bytes, 0, ByteOrder::Little).u32_value,
+            None
+        );
+        assert_eq!(
+            ScalarViews::from_bytes(&bytes, usize::MAX, ByteOrder::Little).u16_value,
+            None
+        );
     }
 }

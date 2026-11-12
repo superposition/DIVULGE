@@ -1,11 +1,14 @@
 //! Fresh decoded bytes are an in-memory capability, never a saved DTO.
 use crate::{
-    coordinates::{ArtifactId, ImageId, ImageMap, ImageOffset, ImageSpan},
-    domain::V15_SHA256,
-    fwsc::{self, FirmwareReport, PackageOffset},
+    coordinates::{ImageId, ImageMap, ImageOffset, ImageSpan},
+    fwsc::{self, FirmwareReport},
 };
 
 #[derive(Debug)]
+/// A saved DTO cannot manufacture this fresh-byte capability.
+/// ```compile_fail
+/// let image: divulge::decoded_image::DecodedImage = serde_json::from_str("{}").unwrap();
+/// ```
 pub struct DecodedImage {
     map: ImageMap,
     bytes: Vec<u8>,
@@ -13,6 +16,7 @@ pub struct DecodedImage {
 
 impl DecodedImage {
     pub(crate) fn from_verified_v15(
+        matched: &fwsc::MatchedV15<'_>,
         bytes: Vec<u8>,
         report: &FirmwareReport,
     ) -> Result<Self, String> {
@@ -24,12 +28,26 @@ impl DecodedImage {
         {
             return Err("Decoded image identity does not match its report".into());
         }
+        let flash = report.flash().ok_or("No flash parent")?;
+        let flash_map = crate::mapping::FlashMap {
+            artifact: matched.artifact_id(),
+            flash: ImageId::from_sha256(&flash.sha256)?,
+            flash_length: u64::from(flash.length),
+            package_base: flash.offset,
+            package_length: u64::from(report.header.length),
+        };
+        let package_span = flash_map.resolve(&crate::mapping::FlashSpan::new(
+            flash_map.flash.clone(),
+            app.flash_offset(),
+            bytes.len() as u64,
+            flash_map.flash_length,
+        )?)?;
         let map = ImageMap::new(
-            ArtifactId::from_sha256(V15_SHA256)?,
+            matched.artifact_id(),
             ImageId::from_sha256(&app.sha256)?,
             bytes.len() as u64,
             u64::from(report.header.length),
-            PackageOffset(report.flash().ok_or("No flash parent")?.offset.0 + app.flash_offset().0),
+            package_span.offset,
             app.mapped_base(),
         )?;
         Ok(Self { map, bytes })

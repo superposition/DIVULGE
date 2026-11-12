@@ -164,21 +164,28 @@ impl ImageMap {
             .0
             .checked_add(span.offset.0)
             .ok_or("Resolved package offset overflows")?;
-        let address = self
-            .mapped_base
-            .0
-            .checked_add(span.offset.0)
-            .ok_or("Resolved address overflows")?;
-        if address > u64::from(u32::MAX) {
-            return Err("Resolved address exceeds the pi32v2 32-bit address space".into());
-        }
-        let source = fwsc::source_spans(
+        let crate::mapping::Resolution::Resolved(mapped) =
+            crate::mapping::LoadMap::for_image(self).resolve_image(span)?
+        else {
+            return Err("The image span has no unique declared load mapping".into());
+        };
+        let package_span = crate::mapping::PackageSpan::new(
+            self.artifact_id.clone(),
             PackageOffset(package_offset),
             span.length,
             self.package_length,
         )?;
+        let source =
+            crate::mapping::SourceMap::fwsc(self.artifact_id.clone(), self.package_length)?
+                .resolve(&package_span)?
+                .into_iter()
+                .map(|part| SourceSpan {
+                    offset: part.offset,
+                    length: part.length,
+                })
+                .collect();
         Ok(Location {
-            address: MappedAddress(address),
+            address: mapped.address,
             source,
         })
     }

@@ -45,6 +45,7 @@ pub fn kind_color(data: &RecordData) -> Color32 {
         | RecordData::Disassembly(_)
         | RecordData::Rea(_) => ACCENT,
         RecordData::Explanation { .. } => Color32::from_rgb(218, 197, 133),
+        RecordData::TypeHypothesis(_) => Color32::from_rgb(218, 197, 133),
         RecordData::Unknown { .. } => Color32::from_rgb(225, 163, 117),
     }
 }

@@ -71,7 +71,7 @@ pub fn load(path: &Path) -> Result<Investigation, String> {
     let mut investigation: Investigation =
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
     // Older files have no decoded data. Do not invent results on migration.
-    if matches!(investigation.schema_version, 1..=5) {
+    if matches!(investigation.schema_version, 1..=6) {
         investigation.schema_version = SCHEMA_VERSION;
     }
     investigation.validate()?;

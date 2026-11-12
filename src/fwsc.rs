@@ -302,6 +302,27 @@ fn name(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// A fresh exact-identity capability borrowed from the bytes that were checked.
+/// This state is not serializable or constructible from an Artifact DTO.
+/// ```compile_fail
+/// let proof: divulge::fwsc::MatchedV15<'static> = serde_json::from_str("{}").unwrap();
+/// ```
+#[derive(Debug)]
+pub struct MatchedV15<'a> {
+    raw: &'a [u8],
+}
+impl<'a> MatchedV15<'a> {
+    pub fn check(raw: &'a [u8]) -> Result<Self, String> {
+        if raw.len() as u64 != V15_LENGTH || digest(raw) != V15_SHA256 {
+            return Err("The V15 profile requires the exact reference length and SHA-256".into());
+        }
+        Ok(Self { raw })
+    }
+    pub fn artifact_id(&self) -> crate::coordinates::ArtifactId {
+        crate::coordinates::ArtifactId::from_sha256(V15_SHA256).expect("checked constant")
+    }
+}
+
 /// The public entry point independently gates the supplied bytes, not a saved
 /// identity DTO. Unknown firmware still supports generic byte inspection.
 pub fn decode_v15(raw: &[u8]) -> Result<FirmwareReport, String> {
@@ -313,12 +334,12 @@ pub fn decode_v15(raw: &[u8]) -> Result<FirmwareReport, String> {
 pub fn decode_v15_with_image(
     raw: &[u8],
 ) -> Result<(FirmwareReport, Option<crate::decoded_image::DecodedImage>), String> {
-    if raw.len() as u64 != V15_LENGTH || digest(raw) != V15_SHA256 {
-        return Err("The V15 profile requires the exact reference length and SHA-256".into());
-    }
-    let (report, bytes) = decode_package_bytes(raw)?;
+    let matched = MatchedV15::check(raw)?;
+    let (report, bytes) = decode_package_bytes(matched.raw)?;
     let image = bytes
-        .map(|bytes| crate::decoded_image::DecodedImage::from_verified_v15(bytes, &report))
+        .map(|bytes| {
+            crate::decoded_image::DecodedImage::from_verified_v15(&matched, bytes, &report)
+        })
         .transpose()?;
     Ok((report, image))
 }
@@ -540,6 +561,21 @@ fn decode_application(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn matching_saved_metadata_cannot_replace_a_fresh_identity_check() {
+        let claimed = crate::domain::Artifact {
+            name: "FM-1_015.fwsc".into(),
+            length: V15_LENGTH,
+            sha256: V15_SHA256.into(),
+            preview: vec![],
+            firmware: None,
+        };
+        assert!(claimed.matches_v15_reference());
+        let forged = vec![0; V15_LENGTH as usize];
+        assert!(MatchedV15::check(&forged).is_err());
+        assert!(decode_v15_with_image(&forged).is_err());
+    }
 
     #[test]
     fn crc_standard_vector_and_source_mapping_boundaries() {

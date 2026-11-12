@@ -44,7 +44,7 @@ pub struct Proposal {
     pub method: String,
     pub enables: String,
     pub unknowns: String,
-    pub evidence: Vec<RecordId>,
+    pub evidence: Vec<ObservationId>,
     pub offset: u64,
     pub length: u64,
 }
@@ -82,7 +82,7 @@ impl Proposal {
             || self
                 .evidence
                 .iter()
-                .any(|id| !supplied.contains(&json!(id.0)))
+                .any(|id| !supplied.contains(&json!(id.value())))
         {
             return Err("Proposal cites evidence that was not supplied".into());
         }
@@ -436,7 +436,7 @@ impl Investigation {
         if let Some(p) = &run.proposal {
             for id in &p.evidence {
                 self.edges.push(Edge {
-                    from: *id,
+                    from: id.record(),
                     to: run.record,
                     relation: Relation::Suggests,
                 });
@@ -465,7 +465,7 @@ mod tests {
             method: "Decode bytes".into(),
             enables: "Compare".into(),
             unknowns: "Execution".into(),
-            evidence: vec![RecordId(3)],
+            evidence: vec![ObservationId::new(3).unwrap()],
             offset: 4,
             length: 16,
         };
@@ -548,14 +548,14 @@ mod tests {
             method: "Decode".into(),
             enables: "Inspect target".into(),
             unknowns: "Runtime".into(),
-            evidence: vec![RecordId(3)],
+            evidence: vec![ObservationId::new(3).unwrap()],
             offset: 0,
             length: 256,
         };
         assert!(p.validate(&ctx).is_ok());
-        p.evidence = vec![RecordId(99)];
+        p.evidence = vec![ObservationId::new(99).unwrap()];
         assert!(p.validate(&ctx).is_err());
-        p.evidence = vec![RecordId(3)];
+        p.evidence = vec![ObservationId::new(3).unwrap()];
         p.offset = u64::MAX;
         assert!(p.validate(&ctx).is_err());
         p.offset = 1;

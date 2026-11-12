@@ -26,7 +26,7 @@ Ask -> Predict -> Code -> Observe -> Explain -> Find it in the app.
 
 Each lesson page has one primary concept, a small code block, its output, a visual link to the application, and room for a prediction. Include concise instructor prompts with expected answers in a separate appendix. Never require an audience to read a wall of model output while listening.
 
-Use the implemented `QuestionPlan` as a concrete struct example: `why`, `steps: Vec<String>`, `enables`, `answered_when`, and `if_not`. Its meaning is visible through Focus question. `Record.question_id: Option<RecordId>` explicitly associates a probe or response with its question; a missing saved plan remains missing on import. Ask learners to state what a successful answer would enable before running a probe.
+Use the implemented `QuestionPlan` as a concrete struct example: `why`, `steps: Vec<String>`, `enables`, `answered_when`, and `if_not`. Its meaning is visible through Focus question. `Record.question_id: Option<QuestionId>` explicitly associates a probe or response with its question; a missing saved plan remains missing on import. Ask learners to state what a successful answer would enable before running a probe.
 
 ## Planned PDF: approximately 16-18 pages
 
@@ -65,3 +65,5 @@ Advanced topics such as Arc, generic coordinate spaces, restricted constructors,
 ## Production and acceptance
 
 Generate the PDF reproducibly from maintained content. Compile every code sample. Use real, current native screenshots with matching terms and visual semantics; avoid mock screenshots presented as implemented behavior. Use selectable text, readable code, embedded fonts, page numbers, source links, and an ink-friendly treatment. Render and inspect every page. Tie the PDF and saved investigation to a release so screenshots and types do not drift.
+
+The implemented [domain reference](domain.md) is the source for identity, coordinate, scalar and hypothesis lessons. `ObservationId` and `QuestionId` are distinct Rust types even though their saved representation remains a record number. `F32Bits` preserves NaN payloads and negative zero; this belongs in the reference section, not the opening twenty-minute route.
