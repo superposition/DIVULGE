@@ -12,6 +12,49 @@ The [0.1.0 release](https://github.com/superposition/DIVULGE/releases/tag/v0.1.0
 
 The native packaging workflow also builds the same egui app as **`DIVULGE.app` for Apple Silicon macOS**, suitable for M1/M2/M3/M4 Macs. It runs the Rust tests on each host, verifies package hashes, and captures the Mac window using the synthetic workshop. See [native targets](docs/native-targets.md) for package contents, build commands and qualification boundaries. The existing tagged 0.1.0 download is the earlier Windows release; newer build artifacts identify their exact source commit.
 
+## How to use
+
+### Open the app
+
+| Your computer | Package to choose | What to open |
+| --- | --- | --- |
+| Windows, Intel/AMD 64-bit | `DIVULGE-windows-release` / `windows-x86_64` | Extract the whole application ZIP, then run `divulge.exe`. |
+| M3 Mac, or another Apple Silicon Mac | `DIVULGE-macos-arm64-release` / `macos-arm64` | Extract the application ZIP, then open `DIVULGE.app`. You can copy the app to Applications. |
+
+The [tagged Windows release](https://github.com/superposition/DIVULGE/releases/tag/v0.1.0) is a direct download. For the new native packages, open [Native desktop packages in Actions](https://github.com/superposition/DIVULGE/actions/workflows/release-check.yml), choose a successful run for `native-desktop-portability`, and download your platform from **Artifacts**. GitHub may require sign-in. Extract that artifact download, then extract the application ZIP inside its `release` folder.
+
+Reading the built-in example or a saved investigation needs no Rust installation, model credentials, analysis tools or background service. The Mac app is locally signed but not Apple-notarized; if macOS blocks it, review the app and approve it through **System Settings > Privacy & Security > Open Anyway**. More build and platform details are in [native targets](docs/native-targets.md).
+
+### Your first investigation
+
+1. Launch the app. The opening screen contains a synthetic two-byte example, so you can explore immediately.
+2. Select a record in the left **Investigation** tree or a node in **Graph**. Read its question, bytes, interpretation and remaining uncertainty in **Harness Insight** on the right. **Center selected** restores readable labels; **Fit scope** shows the current overview.
+3. Click **Play replay** to reveal the recorded sequence. **Presenter hold** keeps your reading position steady; **Review next** advances through new records, and **Follow latest** returns to the newest record. Replay makes no model calls.
+4. For the saved workshop with an analyst correction, use **File > Open investigation** and choose [`workshop/fixtures/synthetic-workshop.json`](workshop/fixtures/synthetic-workshop.json). Read the accompanying [workshop](docs/workshop.md) or `workshop/DIVULGE-workshop.pdf` in a packaged release.
+5. Use **File > Save investigation** to keep your case. Open, Save and Find use **Ctrl** on Windows and **Command** on Mac. **View > Case history and review** shows recorded checkpoints and lets you append steering or corrections.
+6. To bring an investigation to the M3, copy your saved `.divulge.json` file and open it there. For selected material, use **File > Export portable review**. Original firmware and credentials are separate; a reopened case needs **File > Verify source** before another live source-dependent probe.
+
+### Opening screen
+
+Actual Windows capture immediately after launching the native egui app, with its built-in teaching example. Screenshots here show opening screens only.
+
+![DIVULGE opening screen on Windows: investigation tree, evidence graph and Harness Insight](docs/images/first-screen-windows.jpg)
+
+### Investigate your own artifact
+
+Use **File > Open artifact** to select a local file. DIVULGE hashes the file and records its identity; exact supported FM-1 V15 firmware also enables the decoded **Data** view. Choose **Graph**, **Data** or **Code** to inspect related evidence. Firmware and vendor tools are supplied separately. The app does not execute or flash the firmware.
+
+Live operations are optional and need tools installed on that computer:
+
+| Operation | Where to start | Prerequisite |
+| --- | --- | --- |
+| Ask for a next step | **Model > OMP models and next step > Connect / refresh models** | Bun, OMP SDK **18.14.2**, and configured cloud credentials. Select your configured DeepSeek cloud model, review the supplied snapshot, then choose **Propose next step**. |
+| Run a bounded AI investigation | **AI cycle** | The configured model and the tool required for the selected scope. Set the objective, scope and budget; use **Pause**, **Resume** and **Stop** to control execution. |
+| Inspect original-file entropy | **Analysis > REA original-file evidence** | Compatible Node and the existing REA **6.8.0** package. |
+| Disassemble pi32v2 bytes | **Code > Tool / scope**, then **Disassemble selection** | A compatible installed vendor disassembler and Python; Windows uses the selected WSL distribution. Mac live disassembly requires a compatible tool on its analysis host. |
+
+Missing tools are reported as unavailable. The sections below document exact configuration, limits and retained evidence.
+
 ## Implemented workflow
 
 - Native File / Edit / View / Investigation / Analysis / Model / Help menus.
@@ -121,6 +164,20 @@ cargo run --locked -- --compact --session workshop/fixtures/synthetic-workshop.j
 ```
 
 ## Project map
+
+| Folder | What it contains | Start here |
+| --- | --- | --- |
+| [`src/`](src/) | The native egui app and its domain, evidence, graph, history and bounded-execution logic. | [`main.rs`](src/main.rs), [`app.rs`](src/app.rs), [architecture](docs/architecture.md). |
+| [`adapters/`](adapters/) | Process bridges for OMP, REA and the vendor pi32v2 tool. | [OMP setup](#omp-next-step-proposals), [REA setup](#read-evidence-with-rea), [disassembly setup](#disassemble-a-selection). |
+| [`examples/`](examples/) | Runnable Rust lessons and command-line examples for decoding, disassembly, REA and OMP. | [Workshop guide](docs/workshop.md); run `cargo run --locked --example workshop_01_bytes`. |
+| [`workshop/`](workshop/) | Saved synthetic investigations, exercises, fonts and workbook assets. | [`fixtures/synthetic-workshop.json`](workshop/fixtures/synthetic-workshop.json), [`exercises/`](workshop/exercises/). |
+| [`docs/`](docs/) | User guides, architecture, type catalogue, validation records and the opening-screen images. | [Workshop](docs/workshop.md), [native targets](docs/native-targets.md), [history and sharing](docs/history.md). |
+| [`tests/`](tests/) | Synthetic tool-output and evidence fixtures. Most Rust tests live beside the code in `src/`. | Run `cargo test --locked --all-targets`. |
+| [`scripts/`](scripts/) | Workbook generation/checks, source catalogue checks, native packaging and package/window verification. | [`package_release.py`](scripts/package_release.py), [`verify_native.py`](scripts/verify_native.py). |
+| [`third-party/`](third-party/) | Checked upstream notice sources and pinned license snapshots. | [`THIRD_PARTY.md`](THIRD_PARTY.md). |
+| [`.github/workflows/`](.github/workflows/) | Hosted Rust checks and Windows/Apple Silicon package builds. | [`release-check.yml`](.github/workflows/release-check.yml). |
+
+Generated folders are ignored by Git: `target/` holds Rust build files, `output/pdf/` holds generated workbooks, and `output/release/` holds application ZIPs and hashes. `output/native-validation/` holds package-check reports and the Mac launch capture. Keep personal investigations outside the source tree, or under an ignored local path.
 
 - [Architecture and product decisions](docs/architecture.md)
 - [Checked domain types and identity rules](docs/domain.md)
