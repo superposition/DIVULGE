@@ -1,4 +1,4 @@
-use crate::graph::{self, ACCENT, BACKGROUND, GraphView, Layout, MUTED, PANEL, TEXT};
+use crate::graph::{self, ACCENT, BACKGROUND, GraphView, MUTED, PANEL, TEXT};
 use divulge::{
     coordinates::ImageOffset,
     decoded_image::DecodedImage,
@@ -622,6 +622,20 @@ impl DivulgeApp {
                 ui.checkbox(&mut self.show_insight, "Harness Insight");
                 ui.checkbox(&mut self.show_types, "Rust type annotations");
                 ui.checkbox(&mut self.show_activity, "Activity log");
+                ui.menu_button("Panel widths", |ui| {
+                    for (id, label, min, max, default) in [("tree", "Investigation tree", 160.0, 320.0, 205.0), ("insight", "Harness Insight", 360.0, 680.0, 420.0)] {
+                        let key = egui::Id::new(id);
+                        let state = egui::containers::panel::PanelState::load(ui.ctx(), key);
+                        let mut width = state.map(|s| s.size().x).unwrap_or(default);
+                        if ui.add(egui::Slider::new(&mut width, min..=max).text(label)).changed()
+                            && let Some(mut state) = state {
+                            if id == "tree" { state.outer_rect.max.x = state.outer_rect.min.x + width; }
+                            else { state.outer_rect.min.x = state.outer_rect.max.x - width; }
+                            ui.ctx().data_mut(|data| data.insert_persisted(key, state));
+                        }
+                    }
+                    ui.label("Use sliders or their value fields; arrow keys adjust a focused slider.");
+                });
                 ui.separator();
                 if ui
                     .button("Fit graph                            F")
@@ -789,12 +803,19 @@ impl DivulgeApp {
             .color(MUTED),
         );
         ui.add_space(14.0);
-        ui.add(
+        let filter_response = ui.add(
             egui::TextEdit::singleline(&mut self.filter)
                 .id(egui::Id::new("record_filter"))
-                .hint_text("Find a record...")
+                .hint_text("Find ID, text or kind...")
                 .desired_width(f32::INFINITY),
         );
+        let mut select_match = (filter_response.has_focus() || filter_response.lost_focus())
+            && ui.input(|input| input.key_pressed(egui::Key::Enter));
+        if select_match
+            || filter_response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Escape))
+        {
+            filter_response.surrender_focus();
+        }
         ui.add_space(14.0);
         eyebrow(ui, "INVESTIGATION");
         ui.add_space(8.0);
@@ -809,9 +830,15 @@ impl DivulgeApp {
                     .take(self.attention.visible_count)
                     .enumerate()
                 {
-                    if !format!("{} {}", record.title, record.data.label())
-                        .to_lowercase()
-                        .contains(&filter)
+                    if !format!(
+                        "#{:04} {} {} {}",
+                        record.id.0,
+                        record.title,
+                        record.data.label(),
+                        record.summary
+                    )
+                    .to_lowercase()
+                    .contains(&filter)
                     {
                         continue;
                     }
@@ -822,11 +849,31 @@ impl DivulgeApp {
                                 .small()
                                 .color(graph::kind_color(&record.data)),
                         );
-                        if ui
-                            .selectable_label(i == self.attention.selected_index, &record.title)
-                            .clicked()
-                        {
+                        let response =
+                            ui.selectable_label(i == self.attention.selected_index, &record.title);
+                        response.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::WidgetType::Button,
+                                ui.is_enabled(),
+                                i == self.attention.selected_index,
+                                format!(
+                                    "Record {}. {}. {}",
+                                    record.id.0,
+                                    record.data.label(),
+                                    record.title
+                                ),
+                            )
+                        });
+                        if response.clicked() || select_match {
+                            select_match = false;
                             self.attention.select(i);
+                            if !self.show_code && !self.show_data {
+                                self.graph.focus_result(
+                                    &self.session,
+                                    i,
+                                    self.attention.visible_count,
+                                );
+                            }
                             if let RecordData::Disassembly(id) = record.data {
                                 if let Some(report) =
                                     self.session.disassemblies.iter().find(|r| r.id == id)
@@ -946,7 +993,7 @@ impl DivulgeApp {
             self.history_dirty = true;
             self.attention.visible_count = self.session.records.len();
             self.attention.select(index);
-            self.graph.reset(&self.session);
+            self.graph.append_records(&self.session);
             self.graph
                 .focus_result(&self.session, index, self.attention.visible_count);
             self.show_code = false;
@@ -994,11 +1041,6 @@ impl DivulgeApp {
             if ui.selectable_label(self.show_code, "Code").clicked() {
                 self.open_code();
             }
-            ui.label(
-                RichText::new("Shared selection / click a result to inspect it")
-                    .small()
-                    .color(MUTED),
-            );
         });
         ui.separator();
         ui.add_space(8.0);
@@ -1024,53 +1066,19 @@ impl DivulgeApp {
             }
             return;
         }
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label(RichText::new("Investigation graph").size(19.0).strong());
-                ui.label(
-                    RichText::new("Select to understand. Drag to arrange. Scroll to explore.")
-                        .small()
-                        .color(MUTED),
-                );
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Fit all").clicked() {
-                    self.graph.fit();
-                }
-                if ui.button("Focus result").clicked() {
-                    self.graph.focus_result(&self.session, self.attention.selected_index, self.attention.visible_count);
-                }
-                if ui.add_enabled(self.session.question_for(self.selected().id).is_some(), egui::Button::new("Focus question"))
-                    .on_hover_text("Zoom to the question and its next probe; open why, how, and what the answer enables.")
-                    .clicked()
-                { self.focus_question(); }
-            });
-        });
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            let previous = self.graph.layout;
-            ui.selectable_value(&mut self.graph.layout, Layout::Narrative, "Narrative");
-            ui.selectable_value(
-                &mut self.graph.layout,
-                Layout::Relationships,
-                "Relationships",
-            );
-            if previous != self.graph.layout {
-                self.graph.reset(&self.session);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Investigation graph").size(17.0).strong());
+            if ui
+                .add_enabled(
+                    self.session.question_for(self.selected().id).is_some(),
+                    egui::Button::new("Focus question"),
+                )
+                .on_hover_text("Show this question's branch and inspect why, how and to what end.")
+                .clicked()
+            {
+                self.focus_question();
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(
-                    RichText::new(if self.session.origin == Origin::WorkshopFixture {
-                        "WORKSHOP FIXTURE"
-                    } else {
-                        "RECORDED OBSERVATIONS"
-                    })
-                    .size(10.0)
-                    .color(MUTED),
-                );
-            });
         });
-        ui.add_space(8.0);
         let selected_id = self.selected().id;
         let response =
             self.graph
@@ -1164,7 +1172,7 @@ impl DivulgeApp {
             self.history_dirty = true;
             self.attention.visible_count = self.session.records.len();
             self.attention.select(index);
-            self.graph.reset(&self.session);
+            self.graph.append_records(&self.session);
             self.show_code = false;
             self.show_data = false;
             self.graph

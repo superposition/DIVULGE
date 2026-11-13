@@ -12,10 +12,13 @@ mod rea_view;
 
 fn main() -> eframe::Result {
     let compact = std::env::args().any(|arg| arg == "--compact");
+    let large = std::env::args().any(|arg| arg == "--large");
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("DIVULGE | Investigation workbench")
-            .with_inner_size(if compact {
+            .with_inner_size(if large {
+                [1920.0, 1080.0]
+            } else if compact {
                 [1280.0, 720.0]
             } else {
                 [1440.0, 900.0]

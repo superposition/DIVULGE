@@ -10,7 +10,7 @@ The initial learning case is an exact official FM-1 V15 artifact. This remains a
 
 Use egui's menu, panel, scrolling, scene, grid, and widget primitives. A narrow investigation tree sits beside Graph, Data and Code views with shared selection. A resizable terminal-style right panel holds Harness Insight. Data shows package and application directory tables; Graph shows the questions and evidence relationships. Code shares instruction selection between a virtualized listing, a basic-block graph and its inspector. Raw activity is available in a collapsed lower panel.
 
-Narrative is the default graph projection. Relationships uses a force-directed layout. Positions are presentation data; moving a node never changes an evidence relationship. Layout settles before reading rather than continuously moving completed nodes. Future large-graph work needs scoping, virtualization, pinning, and coverage indicators.
+Narrative is the default graph projection. Relationships uses a deterministic force-directed layout. Positions and pins are keyed by stable record IDs and remain presentation data. Explicit layout changes settle before reading; live append preserves existing nodes and camera bounds. Branch and neighbor scopes, viewport culling, named keyboard controls and an accessible relationship list support larger bounded cases. See [graph navigation](graph-navigation.md).
 
 Each node offers a short label and summary. Harness Insight supplies the question, purpose, action, observation, explanation, evidence, uncertainty, and next useful probe. It is human-facing rationale and a durable evidence record, not a hidden chain-of-thought display.
 
@@ -22,7 +22,7 @@ Schema v2 added plans and ownership links; v3 added typed firmware reports; v4 a
 
 Keep the execution frontier distinct from the human attention cursor. Selecting an earlier record or panning detaches follow mode. New results can accumulate without moving the selection or scrolling the text. Review next advances at the reader's pace; Follow latest explicitly catches up.
 
-Recorded replay and the disassembly worker preserve this separation. A run records its starting selection; if the reader changes record, run or instruction while it works, completion retains that reading position. The worker carries a session generation and cannot publish into a replacement investigation. Presenter mode should eventually hold AI execution at completed insights; exploration mode can continue within the selected budget. Replay never runs a model or analysis tool.
+Recorded replay and the disassembly worker preserve this separation. A run records its starting selection; if the reader changes record, run or instruction while it works, completion retains that reading position. The worker carries a session generation and cannot publish into a replacement investigation. Presenter hold fixes the reading checkpoint while work continues; Pause AI prevents dispatching the next step. Replay never runs a model or analysis tool.
 
 ## Layers
 

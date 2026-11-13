@@ -9,13 +9,13 @@ The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 archite
 ## Current foundation
 
 - Native File / Edit / View / Investigation / Analysis / Model / Help menus.
-- Selectable narrative graph and a small, deterministic force-directed relationship layout.
+- Selectable narrative and settled relationship layouts, branch/neighbor scopes, pinned positions, keyboard navigation and an accessible relationship list. See [graph navigation](docs/graph-navigation.md).
 - Terminal-style Harness Insight: file offsets, selectable hex/ASCII bytes, endian-aware scalar views, artifact identity, evidence links, and the question/explanation transcript. Unmapped CPU addresses remain explicitly unresolved.
-- Saved question plans explain why a question matters, how to investigate it, what its answer enables, and what evidence is sufficient. **Focus question** or a double-click zooms to the question and its next probe; **Fit all** restores the overview.
+- Saved question plans explain why a question matters, how to investigate it, what its answer enables, and what evidence is sufficient. **Focus question** or a double-click opens its branch; **Fit scope** shows the overview and **Center selected** restores readable labels.
 - Independent execution frontier and reading checkpoint, with new-record counts, Review next, Follow latest and Presenter hold during live work. [Durable branch memory](docs/harness-memory.md) retains relevant evidence, hypotheses, counter-evidence and analyst decisions for OMP.
 - Local artifact hashing, bounded byte previews, and comparison with the configured V15 identity.
 - Exact-V15 FWSC decoding: eight package entries, header and directory CRCs, raw member CRC comparisons, SFC/JLFS application decoding, and source mappings back to the original file.
-- A compact **Data** view shares selection with **Graph**. Inspect field locations and Rust types, sizes, hashes, raw/decoded bytes, flash offsets, and the application's declared address. **Focus result** frames a record and its immediate evidence relationships.
+- A compact **Data** view shares selection with **Graph**. Inspect field locations and Rust types, sizes, hashes, raw/decoded bytes, flash offsets, and the application's declared address. **Neighbors** brings a record's immediate relationships together.
 - A **Code** view runs the installed vendor pi32v2 disassembler on selected application bytes. It shows 2/4/6-byte instructions, original source offsets, a conservative basic-block graph, and instruction questions, explanations and next probes.
 - Each run retains its tool identity, version, flags, exact input, raw outputs, coverage and outcome. Unknown transfers and hardware loops remain unresolved. Cancellation, timeout and tool failure preserve partial output.
 - Ordered case history, retained note revisions, analyst steering/corrections/resolutions, offline checkpoint replay, backup recovery and scoped review exports. See [history and sharing](docs/history.md).
@@ -32,6 +32,7 @@ Requires Rust 1.92 or newer and the native build prerequisites for your OS. Wind
 ```sh
 cargo run --locked
 cargo run --locked -- --compact
+cargo run --locked -- --large
 cargo run --locked --example workshop_types
 cargo test --locked --all-targets
 ```
