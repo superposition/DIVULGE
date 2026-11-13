@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const FORMAT: &str = "divulge-event-ledger";
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 const MAX_EVENTS: usize = 4096;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -29,6 +29,7 @@ pub enum Payload {
     Commit(Vec<Change>),
     JobStarted { id: String, adapter: String },
     JobEnded { id: String, outcome: String },
+    Execution(crate::execution::Event),
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Change {
@@ -189,6 +190,7 @@ pub struct History {
     document: Document,
     current: Investigation,
     active_jobs: BTreeMap<String, String>,
+    execution: BTreeMap<String, crate::execution::Audit>,
 }
 impl History {
     pub fn new(session: &Investigation, provenance: &str) -> Result<Self, String> {
@@ -206,11 +208,12 @@ impl History {
             },
             current: session.clone(),
             active_jobs: BTreeMap::new(),
+            execution: BTreeMap::new(),
         })
     }
     pub fn restore(document: Document) -> Result<Self, String> {
         if document.format != FORMAT
-            || document.version != VERSION
+            || !(1..=VERSION).contains(&document.version)
             || document.events.len() > MAX_EVENTS
         {
             return Err("Unsupported or oversized event ledger".into());
@@ -253,6 +256,10 @@ impl History {
     }
     fn apply(&mut self, payload: &Payload) -> Result<(), String> {
         match payload {
+            Payload::Execution(event) => {
+                let audit = event.apply(&self.current, self.execution.get(&event.cycle))?;
+                self.execution.insert(event.cycle.clone(), audit);
+            }
             Payload::JobStarted { id, adapter } => {
                 if id.is_empty()
                     || id.len() > 200
@@ -410,6 +417,23 @@ impl History {
     pub fn unfinished_jobs(&self) -> &BTreeMap<String, String> {
         &self.active_jobs
     }
+    pub fn execution_event(&mut self, event: crate::execution::Event) -> Result<(), String> {
+        self.append(Payload::Execution(event))
+    }
+    pub fn pending_probe(&self, cycle: &str) -> Option<u32> {
+        self.execution
+            .get(cycle)?
+            .pending
+            .as_ref()
+            .map(|(step, _, _)| *step)
+    }
+    pub fn completed_probes(
+        &self,
+    ) -> impl Iterator<Item = &(crate::execution::ProbeKey, crate::domain::ObservationId)> {
+        self.execution
+            .values()
+            .flat_map(|audit| audit.completed.iter())
+    }
     /// Prefix replay has no process, filesystem, credentials or network capability.
     pub fn replay(&self, through: usize) -> Result<Investigation, String> {
         if through > self.document.events.len() {
@@ -424,6 +448,7 @@ impl History {
 impl Event {
     pub fn summary(&self) -> String {
         match &self.payload {
+            Payload::Execution(event) => event.summary(),
             Payload::JobStarted { id, adapter } => format!("{adapter} started / {id}"),
             Payload::JobEnded { id, outcome } => format!("{id} / {outcome}"),
             Payload::Commit(changes) => changes

@@ -39,6 +39,10 @@ pub struct Event {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Proposal {
+    #[serde(default, skip_serializing_if = "Operation::is_disassemble")]
+    pub operation: Operation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<Analysis>,
     pub question: String,
     pub why: String,
     pub method: String,
@@ -47,6 +51,34 @@ pub struct Proposal {
     pub evidence: Vec<ObservationId>,
     pub offset: u64,
     pub length: u64,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Operation {
+    #[default]
+    Disassemble,
+    ReadFixture,
+    Conclude,
+}
+impl Operation {
+    fn is_disassemble(&self) -> bool {
+        *self == Self::Disassemble
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Disassemble => "disassemble",
+            Self::ReadFixture => "read_fixture",
+            Self::Conclude => "conclude",
+        }
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Analysis {
+    pub explanation: String,
+    pub significance: String,
+    pub evidence: Vec<ObservationId>,
+    pub limitations: String,
 }
 impl Proposal {
     pub fn validate(&self, context: &Value) -> Result<(), String> {
@@ -64,15 +96,37 @@ impl Proposal {
         let image_length = context["image_length"]
             .as_u64()
             .ok_or("No application image in this context")?;
-        if !self.offset.is_multiple_of(2)
-            || !self.length.is_multiple_of(2)
-            || !(2..=4096).contains(&self.length)
+        if let Some(allowed) = context["allowed_operations"].as_array()
+            && !allowed.contains(&json!(self.operation.label()))
+        {
+            return Err("Operation is outside the Rust-owned allowlist".into());
+        }
+        if self.operation == Operation::Conclude {
+            if self.offset != 0 || self.length != 0 || self.analysis.is_none() {
+                return Err(
+                    "A conclusion has no probe span and requires an evidence-linked explanation"
+                        .into(),
+                );
+            }
+        } else if !(1..=4096).contains(&self.length)
+            || (self.operation == Operation::Disassemble
+                && (!self.offset.is_multiple_of(2) || !self.length.is_multiple_of(2)))
             || self
                 .offset
                 .checked_add(self.length)
                 .is_none_or(|end| end > image_length)
         {
             return Err("Proposed span is unaligned, too large or outside the image".into());
+        }
+        if self.operation != Operation::Conclude
+            && let Some(scope) = context.get("allowed_scope")
+        {
+            let start = scope["offset"].as_u64().ok_or("Invalid allowed offset")?;
+            let length = scope["length"].as_u64().ok_or("Invalid allowed length")?;
+            let end = start.checked_add(length).ok_or("Allowed scope overflows")?;
+            if self.offset < start || self.offset.checked_add(self.length).is_none_or(|v| v > end) {
+                return Err("Proposed probe exceeds this question's scope".into());
+            }
         }
         let supplied = context["record_ids"]
             .as_array()
@@ -85,6 +139,37 @@ impl Proposal {
                 .any(|id| !supplied.contains(&json!(id.value())))
         {
             return Err("Proposal cites evidence that was not supplied".into());
+        }
+        if let Some(analysis) = &self.analysis {
+            for text in [
+                &analysis.explanation,
+                &analysis.significance,
+                &analysis.limitations,
+            ] {
+                if text.trim().is_empty() || text.len() > 4000 {
+                    return Err(
+                        "Analysis requires bounded explanation, significance and limitations"
+                            .into(),
+                    );
+                }
+            }
+            if analysis.evidence.is_empty()
+                || analysis.evidence.len() > 16
+                || analysis
+                    .evidence
+                    .iter()
+                    .any(|id| !supplied.contains(&json!(id.value())))
+            {
+                return Err("Analysis must cite supplied observations".into());
+            }
+        }
+        if let Some(required) = context["required_observation"].as_u64()
+            && self
+                .analysis
+                .as_ref()
+                .is_none_or(|a| !a.evidence.iter().any(|id| id.value() == required))
+        {
+            return Err("The follow-up must explain and cite the last completed probe".into());
         }
         Ok(())
     }
@@ -100,6 +185,8 @@ pub struct AiRun {
     pub outcome: String,
     #[serde(default)]
     pub diagnostic: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analysis_record: Option<RecordId>,
 }
 impl AiRun {
     pub fn validate(&self) -> Result<(), String> {
@@ -135,7 +222,9 @@ impl AiRun {
                 .iter()
                 .find(|e| e.kind == "proposal")
                 .ok_or("Missing proposal event")?;
-            if serde_json::to_value(proposal).unwrap() != projected.data {
+            let recorded: Proposal =
+                serde_json::from_value(projected.data.clone()).map_err(|e| e.to_string())?;
+            if serde_json::to_value(proposal).unwrap() != serde_json::to_value(recorded).unwrap() {
                 return Err("Proposal differs from its recorded output".into());
             }
         }
@@ -154,8 +243,27 @@ pub fn context(
         .artifact
         .as_ref()
         .and_then(|a| a.firmware.as_ref())
-        .and_then(|f| f.application.as_ref())
-        .ok_or("Open the decoded V15 application first")?;
+        .and_then(|f| f.application.as_ref());
+    let (image_length, mapped_base, image_sha256, operations, source) = if let Some(report) = report
+    {
+        (
+            u64::from(report.entry().length),
+            Some(report.mapped_base().0),
+            report.sha256.clone(),
+            vec!["disassemble", "conclude"],
+            "decoded_v15_application",
+        )
+    } else if session.origin == Origin::WorkshopFixture && session.artifact.is_none() {
+        (
+            2,
+            None,
+            crate::fwsc::digest(&[0x34, 0x12]),
+            vec!["read_fixture", "conclude"],
+            "synthetic_workshop_bytes",
+        )
+    } else {
+        return Err("Open a decoded V15 application or the synthetic workshop fixture".into());
+    };
     let records: Vec<_> = session
         .records
         .iter()
@@ -167,7 +275,8 @@ pub fn context(
     let evidence:Vec<_>=records.iter().map(|r|json!({"id":r.id.0,"title":r.title,"observation":r.insight.observation,"uncertainty":r.insight.uncertainty,"rea":session.rea_runs.iter().find(|run|run.record==r.id).and_then(|run|run.receipt.bundle().ok().flatten()).map(|bundle|bundle["records"].as_array().unwrap().iter().map(|e|json!({"evidence_id":e["evidence_id"],"provider":e["provider"],"authority":e["authority"],"file_window":e["normalized_result"]["window"],"file_entropy":e["normalized_result"]["file_entropy"],"limitations":e["limitations"]})).collect::<Vec<_>>())})).collect();
     let runs:Vec<_>=records.iter().filter_map(|r|if let RecordData::Disassembly(id)=r.data {session.disassemblies.iter().find(|run|run.id==id)}else{None}).take(2).map(|run|json!({"run":run.id.0,"scope":run.scope,"coverage":run.coverage,"instructions":run.instructions.iter().take(80).map(|i|json!({"address":i.address.0,"offset":i.span.offset.0,"width":i.width(),"text":i.text,"flow":i.flow})).collect::<Vec<_>>()})).collect();
     let attention=session.record(selected).map(|r|json!({"title":r.title,"question":r.insight.question,"analyst_note":r.note.chars().take(2000).collect::<String>()}));
-    let value = json!({"objective":session.objective,"selected_record":selected.0,"attention":attention,"record_ids":records.iter().map(|r|r.id.0).collect::<Vec<_>>(),"evidence":evidence,"disassembly":runs,"image_length":report.entry().length,"mapped_base":report.mapped_base().0,"image_sha256":report.sha256,"limitations":"Static bounded evidence only. No runtime behavior or recovered function purpose established."});
+    let reviews:Vec<_>=session.records.iter().take(visible).filter(|r|matches!(r.data,RecordData::Review{..}|RecordData::TypeHypothesis(_))).rev().take(8).map(|r|json!({"id":r.id,"data":r.data,"explanation":r.insight.explanation,"limitations":r.insight.uncertainty})).collect();
+    let value = json!({"objective":session.objective,"selected_record":selected.0,"attention":attention,"record_ids":records.iter().map(|r|r.id.0).collect::<Vec<_>>(),"evidence":evidence,"disassembly":runs,"image_length":image_length,"mapped_base":mapped_base,"image_sha256":image_sha256,"source":source,"allowed_operations":operations,"analyst_reviews":reviews,"limitations":"Static bounded evidence only. No runtime behavior or recovered function purpose established."});
     if serde_json::to_vec(&value).unwrap().len() > 64000 {
         return Err("Evidence snapshot exceeds 64 KiB".into());
     }
@@ -209,6 +318,85 @@ pub struct Job {
     pub events: Vec<Event>,
     pub generation: u64,
     pub propose: bool,
+}
+/// Collect one proposal request. Drafts are transient; only a terminal receipt is returned.
+pub fn poll_proposal(job: &mut Job, draft: &mut String) -> Option<AiRun> {
+    let mut terminal = None;
+    let mut diagnostic = String::new();
+    loop {
+        match job.receiver.try_recv() {
+            Ok(Ok(event)) => {
+                if event.kind == "draft"
+                    && let Some(text) = event.data.as_str()
+                    && draft.len() + text.len() <= 65536
+                {
+                    draft.push_str(text);
+                }
+                if ["completed", "error", "cancelled"].contains(&event.kind.as_str()) {
+                    terminal = Some(event.kind.clone());
+                }
+                if event.kind == "error" {
+                    diagnostic = event.data.to_string();
+                }
+                job.events.push(event);
+                if terminal.is_some() {
+                    break;
+                }
+            }
+            Ok(Err(error)) => {
+                diagnostic = error;
+                terminal = Some("transport_error".into());
+                break;
+            }
+            Err(mpsc::TryRecvError::Empty) => break,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                terminal = Some("disconnected".into());
+                break;
+            }
+        }
+    }
+    let mut outcome = terminal?;
+    if job.cancel.load(Ordering::Relaxed) {
+        outcome = "cancelled".into();
+        diagnostic = "Stopped request; no late proposal is eligible for execution".into();
+    }
+    let proposal = if outcome == "completed" {
+        let checked = job
+            .events
+            .iter()
+            .find(|e| e.kind == "proposal")
+            .ok_or_else(|| "No proposal event".to_string())
+            .and_then(|e| {
+                serde_json::from_value::<Proposal>(e.data.clone()).map_err(|e| e.to_string())
+            })
+            .and_then(|p| {
+                p.validate(&job.context)?;
+                Ok(p)
+            });
+        match checked {
+            Ok(p) => Some(p),
+            Err(e) => {
+                diagnostic = e;
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if outcome == "completed" && proposal.is_none() {
+        outcome = "invalid_proposal".into();
+    }
+    Some(AiRun {
+        id: job.id.clone(),
+        record: RecordId(0),
+        context: job.context.clone(),
+        context_sha256: crate::fwsc::digest(&serde_json::to_vec(&job.context).unwrap()),
+        events: job.events.clone(),
+        proposal,
+        outcome,
+        diagnostic,
+        analysis_record: None,
+    })
 }
 impl Drop for Job {
     fn drop(&mut self) {
@@ -387,7 +575,10 @@ fn transport(
 }
 impl Investigation {
     pub fn append_ai_run(&mut self, mut run: AiRun) -> Result<usize, String> {
-        if self.ai_runs.len() >= 16 || self.records.len() >= 200 {
+        let analysis = run.proposal.as_ref().and_then(|p| p.analysis.clone());
+        if self.ai_runs.len() >= 16
+            || self.records.len() + 1 + usize::from(analysis.is_some()) > 200
+        {
             return Err("Investigation AI run limit reached".into());
         }
         run.record = RecordId(
@@ -399,9 +590,19 @@ impl Investigation {
                 .checked_add(1)
                 .ok_or("Record ID overflow")?,
         );
+        run.analysis_record = analysis
+            .as_ref()
+            .map(|_| {
+                run.record
+                    .0
+                    .checked_add(1)
+                    .map(RecordId)
+                    .ok_or("Record ID overflow")
+            })
+            .transpose()?;
         run.validate()?;
         let (title, insight, plan) = if let Some(p) = &run.proposal {
-            ("AI proposal / next span".into(),HarnessInsight{question:p.question.clone(),purpose:p.why.clone(),action:format!("Proposed only: app.bin+0x{:X}, {} bytes. {}",p.offset,p.length,p.method),observation:"OMP read the supplied evidence snapshot; this proposed probe has not run.".into(),explanation:p.enables.clone(),uncertainty:p.unknowns.clone(),next_step:"Stage this span in Code, review it, then Disassemble selection.".into()},Some(QuestionPlan{why:p.why.clone(),steps:vec![p.method.clone()],enables:p.enables.clone(),answered_when:"The proposed span has been inspected and its actual output compared with the question.".into(),if_not:p.unknowns.clone()}))
+            (format!("AI proposal / {}",p.operation.label()),HarnessInsight{question:p.question.clone(),purpose:p.why.clone(),action:format!("Proposed {}: offset 0x{:X}, {} bytes. {}",p.operation.label(),p.offset,p.length,p.method),observation:"OMP read the supplied evidence snapshot; this is model output, not a tool execution.".into(),explanation:p.enables.clone(),uncertainty:p.unknowns.clone(),next_step:"Review the cited evidence; the bounded controller validates any requested execution.".into()},Some(QuestionPlan{why:p.why.clone(),steps:vec![p.method.clone()],enables:p.enables.clone(),answered_when:"The actual evidence has been compared with this question and its limits.".into(),if_not:p.unknowns.clone()}))
         } else {
             (
                 "AI request / incomplete".into(),
@@ -442,10 +643,54 @@ impl Investigation {
                 });
             }
         }
+        if let Some(analysis) = analysis {
+            let id = run.analysis_record.unwrap();
+            let proposal = run.proposal.as_ref().unwrap();
+            self.records.push(Record {
+                id,
+                title: "AI explanation / observed result".into(),
+                summary: analysis.significance.clone(),
+                data: RecordData::Explanation {
+                    basis: Basis::Inferred,
+                    evidence: analysis.evidence.clone(),
+                },
+                insight: HarnessInsight {
+                    question: proposal.question.clone(),
+                    purpose: analysis.significance.clone(),
+                    action:
+                        "OMP interpreted the supplied observations; no new measurement is claimed"
+                            .into(),
+                    observation: format!(
+                        "{} cited observation(s); original receipts remain available",
+                        analysis.evidence.len()
+                    ),
+                    explanation: analysis.explanation,
+                    uncertainty: analysis.limitations,
+                    next_step: proposal.method.clone(),
+                },
+                note: String::new(),
+                question_id: Some(QuestionId::new(run.record.0)?),
+                question_plan: None,
+            });
+            for evidence in &analysis.evidence {
+                self.edges.push(Edge {
+                    from: evidence.record(),
+                    to: id,
+                    relation: Relation::Supports,
+                });
+            }
+            self.edges.push(Edge {
+                from: id,
+                to: run.record,
+                relation: Relation::Suggests,
+            });
+        }
         self.ai_runs.push(run);
         if let Err(e) = self.validate() {
-            let id = self.records.pop().unwrap().id;
-            self.edges.retain(|edge| edge.to != id);
+            let ids: Vec<_> = self.records[index..].iter().map(|r| r.id).collect();
+            self.records.truncate(index);
+            self.edges
+                .retain(|edge| !ids.contains(&edge.to) && !ids.contains(&edge.from));
             self.ai_runs.pop();
             return Err(e);
         }
@@ -460,6 +705,8 @@ mod tests {
     fn recorded_proposals_cannot_outlive_or_change_their_receipt() {
         let ctx = json!({"record_ids":[3],"image_length":512});
         let proposal = Proposal {
+            operation: Operation::Disassemble,
+            analysis: None,
             question: "Where?".into(),
             why: "Find target".into(),
             method: "Decode bytes".into(),
@@ -500,6 +747,7 @@ mod tests {
             },
         ];
         let mut run = AiRun {
+            analysis_record: None,
             id: "a".into(),
             record: RecordId(1),
             context_sha256: crate::fwsc::digest(&serde_json::to_vec(&ctx).unwrap()),
@@ -543,6 +791,8 @@ mod tests {
     fn proposals_require_supplied_evidence_and_checked_scope() {
         let ctx = json!({"record_ids":[3],"image_length":512});
         let mut p = Proposal {
+            operation: Operation::Disassemble,
+            analysis: None,
             question: "Where?".into(),
             why: "Find a branch".into(),
             method: "Decode".into(),

@@ -4,6 +4,7 @@ mod ai_view;
 mod app;
 mod code_view;
 mod data_view;
+mod engine_view;
 mod graph;
 mod history_view;
 mod insight;

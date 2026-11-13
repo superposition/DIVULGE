@@ -2,7 +2,7 @@
 
 **See the question. Follow the evidence. Understand the investigation.**
 
-DIVULGE is a native Rust/egui workbench for AI-assisted reverse engineering. The human sets the objective and steers; the AI will carry out bounded investigations. A graph and a detailed **Harness Insight** panel keep the process understandable at a human reading pace.
+DIVULGE is a native Rust/egui workbench for AI-assisted reverse engineering. The human sets the objective and steers; the AI carries out bounded investigations. A graph and a detailed **Harness Insight** panel keep the process understandable at a human reading pace.
 
 The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 architecture. A companion workshop introduces Rust through the actual types behind the application.
 
@@ -21,8 +21,9 @@ The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 archite
 - Ordered case history, retained note revisions, analyst steering/corrections/resolutions, offline checkpoint replay, backup recovery and scoped review exports. See [history and sharing](docs/history.md).
 - **Model > OMP models and next step** discovers the installed OMP catalogue and proposes a source-linked next byte span. Review its why/how/outcome in Harness Insight, then stage the span in Code. Requests are cancellable; drafts and incomplete outcomes remain distinct from completed proposals.
 - A runnable Rust workshop example using synthetic bytes.
+- **AI cycle** runs checked proposals sequentially within a chosen scope and budget, with Pause, Resume, Stop and reuse of completed requests. Each follow-up explanation cites actual evidence and states its limitations. See [bounded execution](docs/execution.md).
 
-**Autonomous probe execution remains planned.** OMP now proposes the next step; the human stages and runs it. REA supplies canonical entropy evidence. Package decoding and the vendor disassembler run locally. Instruction explanations are deterministic descriptions; OMP proposals are explicitly labeled model output. The app does not execute or flash firmware.
+Bounded AI cycles support the synthetic byte fixture and freshly verified V15 application disassembly. Manual proposals and probe controls remain available. REA supplies canonical entropy evidence through its separate manual operation. Package decoding and the vendor disassembler run locally. Instruction explanations are deterministic descriptions; OMP interpretations are labeled inferred model output. The app does not execute or flash firmware.
 
 ## Run
 
@@ -43,7 +44,7 @@ cargo run --locked -- --artifact /path/to/your/firmware.fwsc
 
 Artifact reads are limited to 128 MiB. Investigation JSON files are limited to 16 MiB, 4,096 events, 200 records, 1,000 edges and 16 disassembly runs. Each run selects 2–4096 bytes and retains at most 256 KiB per output stream. Local cases and their backups retain byte previews, raw tool output, model snapshots and machine paths, including paths in original REA bundles. Credential stores are never copied. Use **File > Export portable review** to choose the material to share.
 
-New saves use a version 1 event-ledger envelope and schema 8 records. Plain schema 1–7 cases migrate as labeled starting snapshots; missing history remains absent. **View > Case history and review** reconstructs checkpoints and appends explicit decisions without rewriting original findings. Reopening runs no tools or models. **File > Verify source** reattaches freshly verified application bytes without replacing notes or records. Older builds cannot read the new envelope.
+New saves use a version 2 event-ledger envelope and schema 8 records. Version 1 ledgers remain readable with their original content commitments. Plain schema 1–7 cases migrate as labeled starting snapshots; missing history remains absent. **View > Case history and review** reconstructs checkpoints and appends explicit decisions without rewriting original findings. Reopening runs no tools or models. **File > Verify source** reattaches freshly verified application bytes without replacing notes or records. Older builds cannot read the new envelope.
 
 ## OMP next-step proposals
 

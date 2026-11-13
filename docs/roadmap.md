@@ -27,7 +27,7 @@ The first delivery is a native, reviewable foundation. The full AI-driven firmwa
 | [#13](https://github.com/superposition/DIVULGE/issues/13) | Reproducible, visually verified workshop PDF | #12, stable UI |
 | [#14](https://github.com/superposition/DIVULGE/issues/14) | Native release and FM-1 talk rehearsal | Harness milestone, #13 |
 
-The exact-V15 reader (#3/#4), vendor disassembly (#5), REA entropy evidence (#6), and restricted OMP next-step proposals (#7) are implemented. The checked domain model (#2) includes role-specific IDs, identity-qualified mappings and explicit type hypotheses. Event persistence (#11) now retains ordered history, note revisions and analyst decisions, with offline reconstruction, backup recovery and scoped exports. Next, implement the bounded executor (#8) so a checked proposal can become an attributable tool run. The synthetic Rust workshop remains available alongside the real V15 case study.
+The exact-V15 reader (#3/#4), vendor disassembly (#5), REA entropy evidence (#6), and restricted OMP next-step proposals (#7) are implemented. The checked domain model (#2) includes role-specific IDs, identity-qualified mappings and explicit type hypotheses. Event persistence (#11) retains ordered history, note revisions and analyst decisions, with offline reconstruction, backup recovery and scoped exports. The bounded executor (#8) connects checked proposals to actual probes and cited explanations, with scope, budgets, pause/stop and completed-request reuse. Next, extend durable harness memory and reading controls (#9), graph navigation (#10), and the workshop/release deliverables. The synthetic Rust workshop remains available alongside the real V15 case study.
 
 ## Delivery rule
 

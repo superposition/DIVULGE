@@ -62,6 +62,8 @@ pub struct DivulgeApp {
     attach_source: bool,
     close_after_job: bool,
     ai: crate::ai_view::AiView,
+    engine: divulge::engine::Engine,
+    engine_view: crate::engine_view::EngineView,
     rea: crate::rea_view::ReaView,
     source_path: Option<PathBuf>,
     presenter: bool,
@@ -116,6 +118,8 @@ impl DivulgeApp {
             attach_source: false,
             close_after_job: false,
             ai: crate::ai_view::AiView::default(),
+            engine: Default::default(),
+            engine_view: Default::default(),
             rea: crate::rea_view::ReaView::default(),
             source_path: None,
             presenter: false,
@@ -234,7 +238,8 @@ impl DivulgeApp {
             && (self.artifact_worker.is_some()
                 || self.code_job.is_some()
                 || self.ai.job.is_some()
-                || self.rea.job.is_some())
+                || self.rea.job.is_some()
+                || self.engine.busy())
         {
             self.status = "Finish or cancel the active job before changing files.".into();
             return;
@@ -260,6 +265,8 @@ impl DivulgeApp {
         self.history_dirty = false;
         self.tracked_jobs.clear();
         self.ai.reset();
+        self.engine.invalidate();
+        self.engine_view = Default::default();
         self.rea.reset();
         self.source_path = None;
         self.generation = self.generation.wrapping_add(1);
@@ -442,7 +449,8 @@ impl DivulgeApp {
     }
 
     fn start_disassembly(&mut self, offset: u64, length: u64, ctx: &egui::Context) {
-        if self.code_job.is_some()
+        if self.engine.busy()
+            || self.code_job.is_some()
             || self.artifact_worker.is_some()
             || self.ai.job.is_some()
             || self.rea.job.is_some()
@@ -696,6 +704,10 @@ impl DivulgeApp {
                 }
             });
             ui.menu_button("Model", |ui| {
+                if ui.button("Run bounded investigation...").clicked() {
+                    self.engine_view.prepare(&self.session, self.selected().id);
+                    ui.close();
+                }
                 if ui.button("OMP models and next step...").clicked() {
                     self.ai.open = true;
                     ui.close();
@@ -723,6 +735,9 @@ impl DivulgeApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Save").clicked() {
                     self.request(FileCommand::Save);
+                }
+                if ui.button("AI cycle").clicked() {
+                    self.engine_view.prepare(&self.session, self.selected().id);
                 }
                 if ui
                     .add_enabled(
@@ -1075,6 +1090,49 @@ impl DivulgeApp {
         }
     }
 
+    fn engine_action(&mut self, action: crate::engine_view::Action, ctx: &egui::Context) {
+        use crate::engine_view::Action;
+        if matches!(action, Action::None) {
+            return;
+        }
+        self.capture_history();
+        let result = match action {
+            Action::None => Ok(()),
+            Action::Models => {
+                self.ai.open = true;
+                self.engine_view.open = false;
+                Ok(())
+            }
+            Action::Start(settings) => {
+                self.playing = false;
+                divulge::engine::Target::from_session(&self.session, self.image.clone()).and_then(
+                    |target| {
+                        self.engine.start(
+                            &mut self.session,
+                            &mut self.history,
+                            target,
+                            self.code.config.clone(),
+                            settings,
+                            self.generation,
+                        )
+                    },
+                )
+            }
+            Action::Pause => self.engine.pause(&mut self.history),
+            Action::Resume => self.engine.resume(&mut self.history),
+            Action::Stop => self.engine.stop(&mut self.history),
+        };
+        if let Err(error) = result {
+            self.error = Some(error);
+        }
+        self.dirty = true;
+        self.refresh_execution_graph();
+        ctx.request_repaint();
+    }
+    fn refresh_execution_graph(&mut self) {
+        self.attention.visible_count = self.session.records.len();
+        self.graph.append_records(&self.session);
+    }
     fn dialogs(&mut self, ctx: &egui::Context) {
         let selected = self.selected().id;
         if let Some(index) = self
@@ -1096,7 +1154,10 @@ impl DivulgeApp {
             &self.session,
             self.source_path.as_deref(),
             self.generation,
-            self.code_job.is_some() || self.artifact_worker.is_some() || self.ai.job.is_some(),
+            self.engine.busy()
+                || self.code_job.is_some()
+                || self.artifact_worker.is_some()
+                || self.ai.job.is_some(),
         ) {
             self.attention.select(index);
             self.show_code = false;
@@ -1110,7 +1171,10 @@ impl DivulgeApp {
             self.attention.visible_count,
             self.selected().id,
             self.generation,
-            self.code_job.is_some() || self.artifact_worker.is_some() || self.rea.job.is_some(),
+            self.engine.busy()
+                || self.code_job.is_some()
+                || self.artifact_worker.is_some()
+                || self.rea.job.is_some(),
         );
         if let Some(index) = action.review {
             self.attention.select(index);
@@ -1123,13 +1187,27 @@ impl DivulgeApp {
             self.open_code();
             self.code.stage(offset, length);
         }
+        let target = divulge::engine::Target::from_session(&self.session, self.image.clone());
+        let action = self.engine_view.show(
+            ctx,
+            &self.session,
+            &self.engine,
+            &target,
+            &mut self.ai.model,
+            self.ai.catalogue.as_ref(),
+            self.code_job.is_some()
+                || self.artifact_worker.is_some()
+                || self.rea.job.is_some()
+                || self.ai.job.is_some(),
+        );
+        self.engine_action(action, ctx);
         egui::Window::new("About DIVULGE").open(&mut self.show_about).resizable(false).show(ctx, |ui| {
             ui.heading("DIVULGE 0.1.0");
             ui.label("An investigation workbench for understanding how we know.");
             ui.label("Native Rust + egui. MIT licensed project code.");
             ui.separator();
             ui.label("Foundation build: artifact identity, evidence graph, Harness Insight, notes, save/open, and replay.");
-            ui.label("V15 decoding, bounded pi32v2 disassembly and OMP next-step proposals are available. REA entropy evidence is available; autonomous execution remains planned.");
+            ui.label("V15 decoding, pi32v2 disassembly, REA entropy evidence and bounded OMP investigation cycles are available.");
             ui.label("Repository: github.com/superposition/DIVULGE");
         });
         egui::Window::new("Workshop / From bytes to evidence").open(&mut self.show_help).default_width(530.0).show(ctx, |ui| {
@@ -1186,6 +1264,28 @@ impl DivulgeApp {
 
 impl eframe::App for DivulgeApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.engine.controller.is_some() {
+            // Capture an explicit note/review before recording dependent execution events.
+            self.capture_history();
+            match self
+                .engine
+                .tick(&mut self.session, &mut self.history, self.generation)
+            {
+                Ok(true) => {
+                    self.dirty = true;
+                    self.refresh_execution_graph();
+                    ctx.request_repaint();
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    self.dirty = true;
+                    self.error = Some(error);
+                }
+            }
+            if self.engine.busy() {
+                ctx.request_repaint_after(Duration::from_millis(50));
+            }
+        }
         if self.rea.poll(&mut self.session, self.generation) {
             self.dirty = true;
             self.history_dirty = true;
@@ -1212,12 +1312,21 @@ impl eframe::App for DivulgeApp {
             && self.ai.job.is_none()
             && self.code_job.is_none()
             && self.rea.job.is_none()
+            && !self.engine.has_worker()
         {
             self.close_after_job = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if ctx.input(|input| input.viewport().close_requested()) {
-            if let Some(job) = &self.rea.job {
+            if self.engine.busy() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                if let Err(error) = self.engine.stop(&mut self.history) {
+                    self.error = Some(error);
+                }
+                self.dirty = true;
+                self.close_after_job = true;
+                ctx.request_repaint();
+            } else if let Some(job) = &self.rea.job {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 job.cancel.store(true, Ordering::Relaxed);
                 self.close_after_job = true;
@@ -1471,6 +1580,12 @@ impl eframe::App for DivulgeApp {
                     });
                 });
             });
+        if self.engine.controller.is_some() {
+            egui::Panel::top("execution_status").show(ui, |ui| {
+                let action = crate::engine_view::EngineView::controls(ui, &self.engine);
+                self.engine_action(action, &ctx);
+            });
+        }
         if self.show_activity {
             egui::Panel::bottom("activity")
                 .default_size(110.0)

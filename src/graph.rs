@@ -8,6 +8,35 @@ pub const BACKGROUND: Color32 = Color32::from_rgb(19, 24, 31);
 pub const PANEL: Color32 = Color32::from_rgb(25, 31, 39);
 const NODE_SIZE: Vec2 = Vec2::new(250.0, 98.0);
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn live_append_preserves_arranged_nodes_and_camera() {
+        let mut session = Investigation::workshop();
+        let mut graph = GraphView::default();
+        graph.reset(&session);
+        graph.positions[2] = Pos2::new(77.0, 81.0); // Analyst-arranged node.
+        let before = graph.positions.clone();
+        let bounds = graph.bounds;
+        for _ in 0..5 {
+            session
+                .append_review(
+                    divulge::history::ReviewKind::Steering,
+                    RecordId(1),
+                    "Compare the evidence".into(),
+                    "No semantic meaning proved".into(),
+                    vec![],
+                )
+                .unwrap();
+            graph.append_records(&session);
+            assert_eq!(graph.positions[..before.len()], before);
+            assert_eq!(graph.bounds, bounds);
+        }
+        assert_eq!(graph.positions.len(), session.records.len());
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Layout {
     Narrative,
@@ -52,6 +81,21 @@ pub fn kind_color(data: &RecordData) -> Color32 {
 }
 
 impl GraphView {
+    /// New live records do not move already arranged nodes or the reading camera.
+    pub fn append_records(&mut self, session: &Investigation) {
+        if self.positions.len() > session.records.len() || self.positions.is_empty() {
+            self.reset(session);
+            return;
+        }
+        let start = self.positions.len();
+        let right = self.positions.iter().map(|p| p.x).fold(0.0, f32::max) + 320.0;
+        for i in start..session.records.len() {
+            self.positions.push(Pos2::new(
+                right + ((i - start) / 4) as f32 * 320.0,
+                ((i - start) % 4) as f32 * 136.0,
+            ));
+        }
+    }
     pub fn reset(&mut self, session: &Investigation) {
         self.positions = (0..session.records.len())
             .map(|i| {

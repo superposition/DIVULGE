@@ -156,6 +156,7 @@ pub enum Relation {
     Revises,
     Resolves,
     Steers,
+    Reuses,
 }
 
 impl Relation {
@@ -170,6 +171,7 @@ impl Relation {
             Self::Revises => "revises",
             Self::Resolves => "resolves",
             Self::Steers => "steers",
+            Self::Reuses => "reuses",
         }
     }
 }
@@ -278,12 +280,35 @@ impl Investigation {
                     .artifact
                     .as_ref()
                     .and_then(|a| a.firmware.as_ref())
-                    .and_then(|f| f.application.as_ref())
-                    .ok_or("AI proposal has no image")?;
-                if run.context["image_sha256"].as_str() != Some(&app.sha256)
-                    || run.context["image_length"].as_u64() != Some(u64::from(app.entry().length))
+                    .and_then(|f| f.application.as_ref());
+                let identity = if let Some(app) = app {
+                    (app.sha256.clone(), u64::from(app.entry().length))
+                } else if self.origin == Origin::WorkshopFixture && self.artifact.is_none() {
+                    (crate::fwsc::digest(&[0x34, 0x12]), 2)
+                } else {
+                    return Err("AI proposal has no supported target".into());
+                };
+                if run.context["image_sha256"].as_str() != Some(&identity.0)
+                    || run.context["image_length"].as_u64() != Some(identity.1)
                 {
-                    return Err("AI proposal belongs to another image".into());
+                    return Err("AI proposal belongs to another target".into());
+                }
+                if let Some(analysis) = &proposal.analysis {
+                    let record = self
+                        .record(
+                            run.analysis_record
+                                .ok_or("AI explanation has no published record")?,
+                        )
+                        .ok_or("Missing AI explanation")?;
+                    if record.insight.explanation != analysis.explanation
+                        || record.insight.uncertainty != analysis.limitations
+                        || record.insight.purpose != analysis.significance
+                        || !matches!(&record.data,RecordData::Explanation{basis:Basis::Inferred,evidence} if evidence==&analysis.evidence)
+                    {
+                        return Err("AI explanation differs from its retained model receipt".into());
+                    }
+                } else if run.analysis_record.is_some() {
+                    return Err("AI explanation record lacks a model analysis".into());
                 }
             }
         }

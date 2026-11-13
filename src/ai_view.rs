@@ -11,7 +11,7 @@ pub struct AiView {
     pub open: bool,
     pub job: Option<Job>,
     pub catalogue: Option<Catalogue>,
-    model: String,
+    pub model: String,
     status: String,
     draft: String,
     search: String,
@@ -118,6 +118,7 @@ impl AiView {
             outcome = "invalid_proposal".into();
         }
         let run = AiRun {
+            analysis_record: None,
             id: job.id.clone(),
             record: RecordId(0),
             context: job.context.clone(),
@@ -203,7 +204,7 @@ impl AiView {
                         ui.label(RichText::new(format!("PROPOSED / app.bin+0x{:X} / {} bytes",p.offset,p.length)).monospace());
                         ui.horizontal(|ui|{
                             if ui.button("Review in graph").clicked(){action.review=Some(index);}
-                            if ui.button("Stage span in Code").clicked(){action.stage=Some((p.offset,p.length));}
+                            if ui.add_enabled(p.operation == omp::Operation::Disassemble, egui::Button::new("Stage span in Code")).clicked(){action.stage=Some((p.offset,p.length));}
                         });
                     }else{ui.label("No validated proposal. Review the recorded receipt for the outcome.");if ui.button("Review receipt").clicked(){action.review=Some(index);}}
                 }

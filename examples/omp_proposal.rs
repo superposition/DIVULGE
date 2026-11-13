@@ -48,6 +48,7 @@ fn main() -> Result<(), String> {
         .transpose()
         .map_err(|e| e.to_string())?;
     let run = omp::AiRun {
+        analysis_record: None,
         id: job.id.clone(),
         record: RecordId(1),
         context_sha256: divulge::fwsc::digest(&serde_json::to_vec(&context).unwrap()),

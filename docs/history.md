@@ -1,6 +1,6 @@
 # Investigation history and review exports
 
-Local saves use the `divulge-event-ledger` envelope, version 1, with a schema 8 investigation baseline and ordered events. Plain schema 1–7 saves migrate to a validated starting snapshot. The migration labels the missing earlier chronology; it does not invent job timestamps or edit history. Schema 8 adds explicit analyst review records.
+Local saves use the `divulge-event-ledger` envelope, version 2, with a schema 8 investigation baseline and ordered events. Version 1 ledgers remain readable with unchanged baseline and event digests; version 2 adds checked execution lifecycle events. Plain schema 1–7 saves migrate to a validated starting snapshot. The migration labels the missing earlier chronology; it does not invent job timestamps or edit history. Schema 8 adds explicit analyst review records.
 
 Each event has a sequence number, a previous-content digest and a digest of its payload. Transactions append records, relationships and original adapter receipts, or retain both versions of a note/objective edit. A completed transaction must reconstruct a valid investigation. Existing findings, receipts and relationships cannot be silently rewritten or removed. Hash commitments detect accidental alteration and order changes; they are not signatures or proof that an author is trustworthy.
 
