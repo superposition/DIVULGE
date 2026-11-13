@@ -39,7 +39,8 @@ impl ByteMatrix {
                         -p * p.log2()
                     })
                     .sum::<f64>()
-                    .max(0.0);
+                    .max(0.0)
+                    .abs();
                 ByteWindow {
                     offset: base + (index * size) as u64,
                     length: chunk.len(),
@@ -91,6 +92,7 @@ mod tests {
             .collect();
         let data = ByteMatrix::from_bytes(&bytes, 0).unwrap();
         assert_eq!(data.windows[0].entropy, 0.0);
+        assert_eq!(format!("{:.4}", data.windows[0].entropy), "0.0000");
         assert_eq!(data.windows[0].counts[0], 256);
         assert_eq!(data.windows[32].entropy, 8.0);
         assert_eq!(data.max_frequency(), 1.0);

@@ -290,6 +290,63 @@ impl MatrixView {
 mod tests {
     use super::*;
     #[test]
+    fn real_egui_pointer_events_rotate_the_matrix_at_both_window_sizes() {
+        let data = ByteMatrix::from_bytes(&[0x55; 4096], 0).unwrap();
+        for size in [Vec2::new(1280.0, 720.0), Vec2::new(1920.0, 1080.0)] {
+            let ctx = egui::Context::default();
+            let mut view = MatrixView::default();
+            let frame = |view: &mut MatrixView, events| {
+                let _ = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        egui::CentralPanel::default().show(ui, |ui| {
+                            view.show(ui, &data, "Synthetic source", "All bytes counted")
+                        });
+                    },
+                );
+            };
+            frame(&mut view, vec![]);
+            frame(&mut view, vec![]);
+            let start = Pos2::new(size.x * 0.65, size.y - 80.0);
+            let end = start + Vec2::new(100.0, -40.0);
+            let before = (view.yaw, view.pitch);
+            frame(
+                &mut view,
+                vec![
+                    egui::Event::PointerMoved(start),
+                    egui::Event::PointerButton {
+                        pos: start,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+            );
+            frame(&mut view, vec![egui::Event::PointerMoved(end)]);
+            frame(
+                &mut view,
+                vec![egui::Event::PointerButton {
+                    pos: end,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+            assert!(
+                (view.yaw - before.0).abs() > 0.2 && (view.pitch - before.1).abs() > 0.1,
+                "Camera did not rotate at {size:?}"
+            );
+            assert_eq!(
+                data.windows.iter().map(|row| row.counts[0x55]).sum::<u32>(),
+                4096
+            );
+        }
+    }
+    #[test]
     fn projection_remains_finite_at_camera_bounds() {
         let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 300.0));
         for pitch in [0.15, 1.5] {
