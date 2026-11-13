@@ -106,9 +106,11 @@ cargo run --locked -- --session investigation.divulge.json --artifact /path/to/F
 
 ## Workshop
 
-The 20-minute introduction follows one example: `[0x34, 0x12]` becomes an observation, a chosen interpretation, and an unanswered question. It covers bytes, collections, structs, enums, Option, Result, borrowing, and distinct coordinate types.
+The Rust introduction follows one example: `[0x34, 0x12]` becomes an observation, a chosen interpretation, and an unanswered question. It covers bytes, collections, structs, enums, Option, Result, borrowing, and distinct coordinate types.
 
-Follow [the workshop route](docs/workshop.md) for six runnable checkpoints, the intentional compiler-error exercise, expected answers and recovery instructions. The [type catalogue](docs/type-catalogue.md) is checked against all 124 named application types. The [18-page workbook](docs/workbook-build.md) is reproducibly built and visually verified. The [developer talk route](docs/talk.md) extends the session to 60, 75 or 90 minutes.
+Follow [the workshop](docs/workshop.md) for Rust code blocks, their output and explanations to read alongside the app. [The talk](docs/talk.md) continues into FM-1 coordinates, pi32v2 instructions, REA evidence and bounded AI investigations. The [type catalogue](docs/type-catalogue.md) covers all 124 named application types. The [18-page workbook](docs/workbook-build.md) uses the same code and spoken narrative.
+
+[Download the code-oriented workbook](https://github.com/superposition/DIVULGE/releases/download/v0.1.0/DIVULGE-workshop-code.pdf).
 
 ```sh
 python scripts/check_workshop.py

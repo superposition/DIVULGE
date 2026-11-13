@@ -2,7 +2,7 @@
 
 Unzip the whole release into a directory you control, then run `divulge.exe`. It opens a synthetic teaching investigation. Use File > Open investigation to open `workshop/fixtures/synthetic-workshop.json`; reopening runs no model or tool.
 
-The companion workbook is `workshop/DIVULGE-workshop.pdf`. Start with its preparation page, then follow [the twenty-minute Rust route](docs/workshop.md). [The developer talk route](docs/talk.md) extends the session to 60, 75 or 90 minutes.
+The companion workbook is `workshop/DIVULGE-workshop.pdf`. Follow [the Rust examples and explanations](docs/workshop.md), then continue into the firmware and AI sections of [the talk](docs/talk.md).
 
 The release contains the matching source, six runnable examples, the intentional compiler error and answer, a saved synthetic replay, its portable review, and dependency notices. `release.json` gives the source commit, build identity and hashes. `SHA256SUMS.txt` records package-file hashes.
 

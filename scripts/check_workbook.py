@@ -24,6 +24,8 @@ def main():
         assert len(text) > 400, "Missing selectable text on page " + str(number)
         assert "{} / 18".format(number) in text, "Missing page number"
         assert "DIVULGE 0.1.0" in text, "Missing release identity"
+        assert any(label in text for label in ["RUST", "OUTPUT", "TEXT", "SHELL"]), "Missing code block"
+        assert not re.search(r"\b(?:minutes?|rehearsal|pacing|operator walkthrough|before the clock|CI checks)\b", text, re.I), "Production notes leaked into the talk"
         for entry in page["/Resources"]["/Font"].values():
             font = entry.get_object()
             descriptor = font.get("/FontDescriptor")
@@ -44,8 +46,9 @@ def main():
     assert len(sources) >= 15, "Source links missing"
     for number in range(4, 10):
         text = reader.pages[number-1].extract_text()
-        for label in ["ASK", "PREDICT", "CODE", "OBSERVE", "EXPLAIN", "FIND IT"]:
+        for label in ["RUST", "OUTPUT", "examples/workshop_"]:
             assert label in text, "Lesson {} lacks {}".format(number-3, label)
+    assert any("Hack" in name for name in fonts), "Code must use the embedded monospace font"
     digest = hashlib.sha256(args.pdf.read_bytes()).hexdigest()
     print("18 pages; selectable text; embedded fonts; {} checked source links".format(len(sources)))
     print("Fonts: " + ", ".join(sorted(fonts)))

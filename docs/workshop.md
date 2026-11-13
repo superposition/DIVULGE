@@ -1,45 +1,423 @@
-# From Bytes to Evidence: a 20-minute Rust workshop
+# DIVULGE: from bytes to evidence
 
-Developers who know variables and functions but little Rust use one synthetic example: `[0x34, 0x12]`. They build a vocabulary for the actual records in DIVULGE, then follow the evidence in the native application. A host Rust type or scalar view does not establish the original firmware's language, packing, byte order or meaning.
+## From bytes to evidence
 
-The opening twenty minutes teaches a small connected path. The [124-type catalogue](type-catalogue.md) and [Rust forms reference](rust-forms.md) cover the rest of the implemented program for later reading. No model, firmware, vendor decoder or network is needed for this module.
+What can we learn from two bytes? We can read them, give them a location, and choose an interpretation. Each of those steps gives us a different kind of information.
 
-## Prepare before the clock starts
+```rust
+let bytes: [u8; 2] = [0x34, 0x12];
+let value = u16::from_le_bytes(bytes);
 
-Use the matching source/release package. Windows is the verified desktop target; other platforms remain unverified. Source builds need a supported Rust MSVC toolchain, the Microsoft C++ linker/Windows SDK, and an OpenGL-capable desktop. The manifest requires Rust 1.92 or newer; the local teaching checks used rustc/cargo 1.94.1. Python 3.8+ runs the workshop verifier; rebuilding the PDF and release package requires Python 3.11+.
-
-Run from the repository root before the session:
-
-```sh
-cargo build --locked --examples
-cargo build --locked --bin divulge
-python scripts/check_workshop.py
-python scripts/check_catalogue.py
-cargo run --locked -- --compact --session workshop/fixtures/synthetic-workshop.json
+assert_eq!(value, 4660);
 ```
 
-The package includes completed checkpoints, the deliberate error and answer, a deterministic saved replay, and a portable synthetic review. Installation, dependency downloads and first compilation are outside the twenty minutes. The presenter opens the editor and keeps one workbench window. If compilation is unavailable, use the prebuilt native release and the completed code/output pages.
+We know exactly how this calculation produced 4660. We still need evidence to say what that number represents. It could be a length, a parameter, part of an instruction, or something else.
 
-## Timed route
+```text
+question
+   -> probe
+   -> observation
+   -> explanation
+   -> next question
+```
 
-| Clock | Activity | Learner-visible result |
-| --- | --- | --- |
-| 00:00-02:00 | Ask what the two bytes can establish. Show question, probe, observation and explanation. | Evidence and meaning are different claims |
-| 02:00-05:00 | Checkpoint 1: u8/u16, array, slice and byte order | 4660 versus 13330 from the same bytes |
-| 05:00-07:30 | Checkpoint 2: Observation, Vec and String | Owned evidence with a source coordinate |
-| 07:30-10:00 | Checkpoint 3: RecordData and match | Questions, actions and claims have different variants |
-| 10:00-12:30 | Checkpoint 4: Option versus Result | Unknown address versus insufficient bytes |
-| 12:30-16:00 | Checkpoint 5: borrowing and coordinate wrappers; intentional compiler error | A CPU address is rejected by a file reader |
-| 16:00-18:00 | Checkpoint 6: checked evidence IDs and ? | Explanation 4 resolves to observation 3 |
-| 18:00-20:00 | In the app, follow evidence, identify a limitation and choose a next probe | Learner states an evidence-backed claim with a boundary |
+DIVULGE gives each step a record. Rust gives those records a shape. The graph shows how they connect, and the right-hand pane lets us inspect the bytes and the explanation together.
 
-Each lesson follows **Ask -> Predict -> Code -> Observe -> Explain -> Find it in the app**. The exact questions, outputs, live edits and instructor answers are maintained in [lessons.json](../workshop/lessons.json). The PDF reads the same source and code files. The rehearsal record must distinguish technical command checks from an actual timed operator or spoken run.
+We will begin with the synthetic bytes 34 12, then follow the same ideas into the FM-1 V15 firmware and its pi32v2 instructions.
 
-## Six runnable checkpoints
+[examples/workshop_01_bytes.rs](../examples/workshop_01_bytes.rs)
 
-Run one at a time:
+[src/domain.rs](../src/domain.rs)
 
-```sh
+## Give the question a shape
+
+What makes a question useful? We need to know why it matters, how we can investigate it, and what an answer would let us do.
+
+```rust
+pub struct QuestionPlan {
+    pub why: String,
+    pub steps: Vec<String>,
+    pub enables: String,
+    pub answered_when: String,
+    pub if_not: String,
+}
+```
+
+A struct brings related values together. Here, each field gives the question a job. The steps are a Vec<String> because a question can need several actions.
+
+```rust
+QuestionPlan {
+    why: "Choose how to read this field".into(),
+    steps: vec!["Compare both byte orders".into()],
+    enables: "Choose the next observation".into(),
+    answered_when: "A format defines the field".into(),
+    if_not: "Keep both interpretations open".into(),
+}
+```
+
+The question stays attached to the investigation. When we return to a result, we can see what we were trying to establish and which part remains unanswered.
+
+[src/domain.rs](../src/domain.rs)
+
+[docs/domain.md](../docs/domain.md)
+
+## Keep the explanation inspectable
+
+How do we make an investigation understandable while it is happening? We keep the question, the action, the observation and the explanation in named fields.
+
+```rust
+pub struct HarnessInsight {
+    pub question: String,
+    pub purpose: String,
+    pub action: String,
+    pub observation: String,
+    pub explanation: String,
+    pub uncertainty: String,
+    pub next_step: String,
+}
+```
+
+String gives each field owned text. The names matter as much as the container: observation describes what we saw; explanation describes what we make of it.
+
+```text
+observation: "The bytes are 34 12"
+explanation: "Little-endian u16 gives 4660"
+uncertainty: "The field meaning is unknown"
+next_step:   "Find a format declaration"
+```
+
+These are the sections we see in Harness Insight. A useful explanation carries its uncertainty and a next step with it, so we can question the claim without losing the evidence.
+
+[src/domain.rs](../src/domain.rs)
+
+[src/insight.rs](../src/insight.rs)
+
+## The same bytes, two integer views
+
+Do the bytes change when we choose a different byte order?
+
+```rust
+fn main() {
+    let bytes: [u8; 2] = [0x34, 0x12];
+    let view: &[u8] = &bytes;
+    let little: u16 = u16::from_le_bytes(bytes);
+    let big: u16 = u16::from_be_bytes(bytes);
+    println!("Synthetic bytes: {view:02x?}");
+    println!("little-endian u16: {little}");
+    println!("big-endian u16: {big}");
+    println!("Intended meaning: unknown");
+}
+```
+
+```text
+Synthetic bytes: [34, 12]
+little-endian u16: 4660
+big-endian u16: 13330
+Intended meaning: unknown
+```
+
+u8 describes one byte. [u8; 2] says the array has exactly two elements. &[u8] borrows a view of those elements. When we call from_le_bytes or from_be_bytes, we choose a rule for combining the bytes into a u16. The bytes themselves stay the same.
+
+In Harness Insight, changing the endian selector changes 4660 to 13330. The observed bytes remain 34 12.
+
+[examples/workshop_01_bytes.rs](../examples/workshop_01_bytes.rs)
+
+## Give the observation an owner
+
+What must we retain so another person can check this observation?
+
+```rust
+use divulge::domain::{FileOffset, Observation};
+
+fn main() {
+    let observation = Observation {
+        offset: FileOffset(0),
+        bytes: vec![0x34, 0x12],
+        description: String::from("Synthetic teaching bytes"),
+    };
+    println!(
+        "file+0x{:x}: {:02x?}",
+        observation.offset.0, observation.bytes
+    );
+    println!(
+        "{} / {} bytes",
+        observation.description,
+        observation.bytes.len()
+    );
+    println!("Vec<u8> owns the bytes; String owns the description.");
+}
+```
+
+```text
+file+0x0: [34, 12]
+Synthetic teaching bytes / 2 bytes
+Vec<u8> owns the bytes; String owns the description.
+```
+
+Observation keeps the file location, the bytes and a description together. Vec<u8> owns the byte sequence; String owns the description. We can change the wording while preserving the exact bytes we observed. Rust is describing our evidence record here, not reconstructing a struct from the firmware.
+
+Observation 3 shows file+0 and the same two hex cells. Its mapped address remains unresolved because this fixture has no load map.
+
+[examples/workshop_02_observation.rs](../examples/workshop_02_observation.rs)
+
+## Name the kind of claim
+
+Should a question, an observation and an explanation carry the same fields?
+
+```rust
+use divulge::domain::{Investigation, RecordData};
+
+fn main() {
+    let case = Investigation::workshop();
+    for record in &case.records {
+        let kind = match &record.data {
+            RecordData::Question => "question",
+            RecordData::Probe { .. } => "probe",
+            RecordData::Observation(_) => "observation",
+            RecordData::Explanation { .. } => "explanation",
+            RecordData::Unknown { .. } => "unknown",
+            _ => "another implemented record kind",
+        };
+        println!("#{} {kind}", record.id.0);
+    }
+}
+```
+
+```text
+#1 question
+#2 probe
+#3 observation
+#4 explanation
+#5 unknown
+#6 question
+```
+
+RecordData is an enum: a record has one of several shapes. match lets us handle those shapes explicitly. A question asks for evidence, a probe requests an action, and an explanation cites what supports it. The wildcard covers the other variants implemented by DIVULGE.
+
+The graph uses these kinds as card labels. Unknown 5 keeps a question open; question 6 asks what evidence could establish the field's meaning.
+
+[examples/workshop_03_records.rs](../examples/workshop_03_records.rs)
+
+## Absence and failure are different
+
+Is an unknown destination the same as a failed two-byte read?
+
+```rust
+use divulge::domain::{FileOffset, MappedAddress, read_u16_le};
+
+fn main() {
+    let bytes = [0x34, 0x12];
+    let complete: Result<u16, &str> = read_u16_le(&bytes, FileOffset(0));
+    let short: Result<u16, &str> = read_u16_le(&bytes[..1], FileOffset(0));
+    let destination: Option<MappedAddress> = None;
+    println!("Two bytes: {complete:?}");
+    println!("One byte: {short:?}");
+    match destination {
+        Some(address) => println!("Destination: 0x{:x}", address.0),
+        None => println!("Destination: unknown; no address was invented"),
+    }
+}
+```
+
+```text
+Two bytes: Ok(4660)
+One byte: Err("Two bytes are required")
+Destination: unknown; no address was invented
+```
+
+Result tells us whether an operation succeeded. Option tells us whether a value is present. A failed two-byte read has an error to explain. An unknown address has no value yet. Zero would be a specific address, so we cannot use it to mean that we do not know.
+
+Selecting the last byte, 12, gives u8=18. The u16 view becomes unavailable because only one byte remains in the observed range.
+
+[examples/workshop_04_absence.rs](../examples/workshop_04_absence.rs)
+
+## Borrow data; distinguish coordinates
+
+Can a declared CPU address be passed directly to a file reader?
+
+```rust
+use divulge::domain::{FileOffset, MappedAddress, read_u16_le};
+
+fn count(bytes: &[u8]) -> usize {
+    bytes.len()
+}
+
+fn main() {
+    let bytes = vec![0x34, 0x12];
+    println!("Borrowed {} bytes", count(&bytes));
+    println!("Owner still has: {bytes:02x?}");
+    let file_offset = FileOffset(0);
+    let declared_address = MappedAddress(0x0200_0120);
+    println!("File read: {:?}", read_u16_le(&bytes, file_offset));
+    println!("Declared address: 0x{:08x}", declared_address.0);
+    println!("These coordinates need a checked map, not a cast.");
+}
+```
+
+```text
+Borrowed 2 bytes
+Owner still has: [34, 12]
+File read: Ok(4660)
+Declared address: 0x02000120
+These coordinates need a checked map, not a cast.
+```
+
+The function count borrows &[u8], so the Vec remains available afterwards. FileOffset and MappedAddress both contain u64 values, but Rust treats them as different types. A file position and a CPU address need an explicit mapping before we can relate them.
+
+The inspector keeps file offsets, decoded-image offsets and declared addresses visible as separate coordinates. Their numeric values can differ even when they refer to the same instruction.
+
+[examples/workshop_05_coordinates.rs](../examples/workshop_05_coordinates.rs)
+
+## Connect an explanation to evidence
+
+What lets someone challenge an explanation after the model has stopped?
+
+```rust
+use divulge::domain::{Investigation, RecordData, RecordId};
+
+fn main() -> Result<(), String> {
+    let case = Investigation::workshop();
+    case.validate()?;
+    let record = case.record(RecordId(4)).ok_or("Missing record 4")?;
+    if let RecordData::Explanation { basis, evidence } = &record.data {
+        println!("#{} / {basis}", record.id.0);
+        for id in evidence {
+            let observation = id.resolve(&case)?;
+            println!("Evidence #{}: {}", observation.id.0, observation.title);
+        }
+    }
+    println!("Explanation: {}", record.insight.explanation);
+    println!("Limitation: {}", record.insight.uncertainty);
+    println!("Next: {}", record.insight.next_step);
+    Ok(())
+}
+```
+
+Output excerpt:
+
+```text
+#4 / Derived
+Evidence #3: Two bytes: 34 12
+```
+
+RecordId identifies a record. The explanation holds ObservationId values, which we resolve against the investigation to check that they point to completed evidence. The ? operator returns an error if that lookup fails. Once the link resolves, we can inspect the original observation and challenge the explanation.
+
+In the graph, explanation 4 links to observation 3. Following that link brings us back to the bytes. The integer view is reproducible; the intended meaning is still open.
+
+[examples/workshop_06_evidence.rs](../examples/workshop_06_evidence.rs)
+
+## Let the compiler catch the mix-up
+
+What happens if we give a CPU address to a function that reads a file offset?
+
+```rust
+use divulge::domain::{MappedAddress, read_u16_le};
+
+fn main() {
+    let bytes = [0x34, 0x12];
+    let address = MappedAddress(0x0200_0120);
+    println!("{:?}", read_u16_le(&bytes, address));
+}
+```
+
+```text
+error[E0308]: mismatched types
+expected `FileOffset`, found `MappedAddress`
+```
+
+The function's signature tells us which coordinate it accepts. For this buffer, we know the first byte is at file offset zero.
+
+```rust
+use divulge::domain::{FileOffset, read_u16_le};
+
+fn main() {
+    let bytes = [0x34, 0x12];
+    println!("{:?}", read_u16_le(&bytes, FileOffset(0)));
+}
+```
+
+```text
+Ok(4660)
+```
+
+Wrapping the CPU address in FileOffset would make the compiler accept its type, but it would not establish a correct file location. The mapping is a separate fact that we have to obtain.
+
+[workshop/exercises/wrong_coordinate.rs](../workshop/exercises/wrong_coordinate.rs)
+
+[workshop/exercises/coordinate_answer.rs](../workshop/exercises/coordinate_answer.rs)
+
+## Make the byte reader say what failed
+
+The type check protects the coordinate space. We also need to check whether the requested bytes exist. This is the reader used by the examples.
+
+```rust
+pub fn read_u16_le(bytes: &[u8], offset: FileOffset) -> Result<u16, &'static str> {
+    let start = usize::try_from(offset.0).map_err(|_| "Offset does not fit this platform")?;
+    let end = start.checked_add(2).ok_or("Byte range overflows")?;
+    let pair = bytes.get(start..end).ok_or("Two bytes are required")?;
+    Ok(u16::from_le_bytes([pair[0], pair[1]]))
+}
+```
+
+First we convert the offset to an index for this platform. checked_add catches arithmetic overflow. get checks whether the complete range is present. Each ? passes a failure back to the caller.
+
+```rust
+read_u16_le(&[0x34, 0x12], FileOffset(0))
+// Ok(4660)
+
+read_u16_le(&[0x34], FileOffset(0))
+// Err("Two bytes are required")
+```
+
+Only after those checks do we construct the u16. The function can explain why a read failed, and the rest of the program can keep that failure separate from a successful observation.
+
+[src/domain.rs](../src/domain.rs)
+
+[docs/rust-forms.md](../docs/rust-forms.md)
+
+## Connect records without merging them
+
+An observation and an explanation need separate identities. An edge tells us how they are related.
+
+```rust
+pub struct Edge {
+    pub from: RecordId,
+    pub to: RecordId,
+    pub relation: Relation,
+}
+```
+
+```rust
+Edge {
+    from: RecordId(3),
+    to: RecordId(4),
+    relation: Relation::Supports,
+}
+```
+
+![Observation 3 connects the byte-reading probe to explanation 4.](../workshop/assets/synthetic-evidence.jpg)
+
+The graph draws this relationship as an arrow. Moving a card changes its position on screen; the IDs and the Supports relationship stay the same. We can also add Revises or Contradicts edges without erasing the original claim.
+
+[src/domain.rs](../src/domain.rs)
+
+[src/graph.rs](../src/graph.rs)
+
+## Bring the pieces together
+
+We can now follow one value all the way through the program: from its bytes, through a chosen interpretation, to the evidence link that lets someone question it.
+
+```text
+[0x34, 0x12]
+   -> Observation { offset, bytes, description }
+   -> RecordData::Explanation { basis, evidence }
+   -> HarnessInsight { explanation, uncertainty, .. }
+   -> Edge { from, to, relation }
+```
+
+In the workshop investigation, explanation 4 says that a little-endian u16 view gives 4660. Its evidence link leads to observation 3. Choosing big endian gives 13330 from those same bytes. The field's intended meaning remains the question to investigate.
+
+```shell
 cargo run --locked --example workshop_01_bytes
 cargo run --locked --example workshop_02_observation
 cargo run --locked --example workshop_03_records
@@ -48,69 +426,12 @@ cargo run --locked --example workshop_05_coordinates
 cargo run --locked --example workshop_06_evidence
 ```
 
-1. **[Bytes](../examples/workshop_01_bytes.rs).** Predict both integer interpretations. Live-code the second conversion. The bytes stay `34 12`; little endian gives 4660 and big endian gives 13330. Find record 3 and switch the inspector's endian choice. Do not call either value the intended field meaning.
-2. **[Observation](../examples/workshop_02_observation.rs).** Ask what another person needs to check the result. Fill the source offset, owned bytes and owned description. Change the description without changing the evidence. Find the offset and hex cells on record 3.
-3. **[Record kinds](../examples/workshop_03_records.rs).** Predict the kinds in the graph. Write three match arms and discuss the others. Record 5 is an Unknown with a question plan; record 6 is a Question. A valid enum variant is a structural classification, not proof that a claim is true.
-4. **[Absence and failure](../examples/workshop_04_absence.rs).** Truncate the borrowed slice to one byte. Observe `Err("Two bytes are required")`; keep a destination at `None`. In the app, select the last byte and observe that wider scalar views are unavailable. Explain why zero is not a substitute for unknown.
-5. **[Borrowing and coordinates](../examples/workshop_05_coordinates.rs).** Borrow `&bytes`, then reuse the owner. Compare `FileOffset` with `MappedAddress`. Run the intentional error below. An explicit mapping, not a wrapper cast, relates a file location to a CPU address.
-6. **[Evidence](../examples/workshop_06_evidence.rs).** Resolve the explanation's ObservationId and print its limitation/next step. The same link is clickable in Harness Insight. `?` propagates a validation failure rather than making up a record.
+File > Open investigation loads workshop/fixtures/synthetic-workshop.json. We can select a claim, follow its evidence, compare interpretations, and record what observation would change our mind.
 
-The original [workshop_types](../examples/workshop_types.rs) remains a compact combined example. These six checkpoints progressively add concepts; each is independently runnable so a learner can rejoin at any stage.
+That is the question to carry into the firmware: what do we know from the bytes, what are we inferring, and what should we inspect next?
 
-## Deliberate compiler error and instructor answer
+[workshop/fixtures/synthetic-workshop.json](../workshop/fixtures/synthetic-workshop.json)
 
-[wrong_coordinate.rs](../workshop/exercises/wrong_coordinate.rs) passes a `MappedAddress` to `read_u16_le`, which requires `FileOffset`. The verifier compiles it against this repository's actual library and requires **E0308**, including both type names. It also compiles and runs [coordinate_answer.rs](../workshop/exercises/coordinate_answer.rs).
+[docs/type-catalogue.md](../docs/type-catalogue.md)
 
-To show the error live in a normal Cargo example, copy the exercise to an untracked working file:
-
-```sh
-# PowerShell
-Get-Content workshop/exercises/wrong_coordinate.rs -Raw | Set-Content examples/live_workshop.rs
-cargo run --locked --example live_workshop
-Get-Content workshop/exercises/coordinate_answer.rs -Raw | Set-Content examples/live_workshop.rs
-cargo run --locked --example live_workshop
-```
-
-The intentional failure is expected. The corrected example prints `Ok(4660)`. Writing the content refreshes the working file's timestamp: PowerShell `Copy-Item` can preserve an older timestamp and let Cargo reuse stale output. A POSIX shell can use `cp` without timestamp preservation. Remove the temporary example when finished.
-
-**Ask:** Why not simply construct `FileOffset(address.0)`? **Answer:** That silences the type mismatch without establishing a mapping. In this fixture we know only that the owned two-byte buffer starts at offset zero. The declared address shown in checkpoint 5 is illustrative metadata, not a mapping to those bytes.
-
-## Instructor pacing and recovery
-
-Pre-open all six completed files. Type only the live edit named in the lesson, run it and ask for one prediction. Do not type boilerplate, tool setup or a long transcript during the slot. Reserve the last two minutes for the closing task.
-
-If someone falls behind, give them the completed checkpoint and its expected output; continue with the concept. If a build exceeds its time box, show the verified output and move to the saved native replay. If the network or OMP is unavailable, nothing changes in this module. A live model is optional in the later talk.
-
-The shortest useful explanation is: an observation records what was seen; an interpretation records what we chose to read from it; uncertainty names what that does not establish. Show the linked records as you say this. Do not describe model output as hidden reasoning or as automatically trustworthy.
-
-## Guided application worksheet
-
-Open `workshop/fixtures/synthetic-workshop.json`. Its seven records contain the original six-card fixture, a saved note and an analyst correction. It contains two ordered history events and no running workers, source file or model receipt.
-
-1. Select explanation 4. Write its claim in one sentence.
-2. Follow evidence 3. Copy the observed bytes and source range.
-3. Choose the other byte order. Which part changed: evidence, interpretation or meaning?
-4. State a limitation that remains true under both byte orders.
-5. Inspect correction 7. Verify that explanation 4 still exists and the correction links to it.
-6. Use Investigation > Replay from beginning. Select an older card while the frontier advances. Explain Reading versus Latest.
-7. Use Review next, Follow latest and Presenter hold. Hold concerns reading; Pause AI concerns execution.
-8. Add a note, save a copy, reopen it and find the exact note. Reopening runs no model or tool.
-9. Inspect the portable synthetic review. It is for reading, not an executable session or canonical REA bundle.
-
-**Closing task:** choose an explanation, identify its evidence, name one limitation, and propose a probe that would distinguish competing meanings. A good next probe is specific enough to have an observable outcome.
-
-## Type reference and later FM-1 module
-
-The [catalogue](type-catalogue.md) gives every implemented named Rust type its meaning, creator, validation boundary, UI counterpart and mistake made harder. A checker compares it with source declarations, including macro-generated IDs and spans. [Rust forms](rust-forms.md) covers primitives, collections, ownership, channels, atomics, serde and egui types. Advanced forms stay out of the first twenty minutes.
-
-The later firmware module follows identity -> package -> mapped application -> pi32v2 observations -> explanation -> unresolved question. Keep file offsets, image offsets, flash offsets and declared addresses distinct. Static disassembly does not prove runtime behavior, source types or function purpose. The reference firmware and vendor tools are obtained separately; no firmware is in the workshop package.
-
-## Reproduce the teaching assets
-
-```sh
-cargo run --locked --example prepare_workshop
-python scripts/check_workshop.py
-python scripts/check_catalogue.py --write
-```
-
-The generator is deterministic and uses only the built-in synthetic fixture. The checker compares exact example outputs, rejects the wrong coordinate with the expected compiler error, runs the answer, regenerates both JSON files and reconstructs the saved replay offline. The 18-page companion workbook is generated and visually checked; see [its build and review instructions](workbook-build.md). The [rehearsal record](rehearsal.md) separates measured operator work from the planned twenty-minute spoken route.
+[docs/rust-forms.md](../docs/rust-forms.md)

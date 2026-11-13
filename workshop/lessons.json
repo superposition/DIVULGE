@@ -6,7 +6,6 @@
     {
       "slug": "workshop_01_bytes",
       "title": "The same bytes, two integer views",
-      "minutes": "02:00–05:00",
       "ask": "Do the bytes change when we choose a different byte order?",
       "predict": "Predict both u16 values before running the program.",
       "live_edit": "Start with the little-endian line; add the big-endian conversion and print it.",
@@ -18,7 +17,6 @@
     {
       "slug": "workshop_02_observation",
       "title": "Give the observation an owner",
-      "minutes": "05:00–07:30",
       "ask": "What must we retain so another person can check this observation?",
       "predict": "Name a source location, the bytes and a description.",
       "live_edit": "Fill the three Observation fields. Change only its description and rerun.",
@@ -30,7 +28,6 @@
     {
       "slug": "workshop_03_records",
       "title": "Name the kind of claim",
-      "minutes": "07:30–10:00",
       "ask": "Should a question, an observation and an explanation carry the same fields?",
       "predict": "Assign a record kind to each step in the six-card teaching graph.",
       "live_edit": "Write the Question, Observation and Explanation match arms, then inspect the remaining variants.",
@@ -42,7 +39,6 @@
     {
       "slug": "workshop_04_absence",
       "title": "Absence and failure are different",
-      "minutes": "10:00–12:30",
       "ask": "Is an unknown destination the same as a failed two-byte read?",
       "predict": "Predict the full read, truncated read and destination outcomes.",
       "live_edit": "Change the read from &bytes to &bytes[..1], then add Option<MappedAddress> = None.",
@@ -54,7 +50,6 @@
     {
       "slug": "workshop_05_coordinates",
       "title": "Borrow data; distinguish coordinates",
-      "minutes": "12:30–16:00",
       "ask": "Can a declared CPU address be passed directly to a file reader?",
       "predict": "Predict whether wrong_coordinate.rs compiles, and whether the Vec remains usable after a borrowed read.",
       "live_edit": "Borrow &bytes, run the intentional coordinate error, then replace the argument with FileOffset(0).",
@@ -66,7 +61,6 @@
     {
       "slug": "workshop_06_evidence",
       "title": "Connect an explanation to evidence",
-      "minutes": "16:00–18:00",
       "ask": "What lets someone challenge an explanation after the model has stopped?",
       "predict": "Find the observation ID cited by record 4 and state a limitation.",
       "live_edit": "Resolve the evidence ID, print its title, then print the explanation's uncertainty and next step.",

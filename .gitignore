@@ -13,3 +13,4 @@
 # Unrelated pre-existing report in this workspace.
 /ls-zero-reverse-engineering.pdf
 /examples/live_workshop.rs
+__pycache__/
