@@ -23,7 +23,9 @@ def sha(raw):
 def verify(archive_path, output, smoke=False):
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="divulge-native-") as temporary:
-        root = pathlib.Path(temporary)
+        # macOS temporary paths commonly spell /private/var as /var. Compare
+        # resolved spellings on both sides of the archive containment check.
+        root = pathlib.Path(temporary).resolve()
         with zipfile.ZipFile(archive_path) as archive:
             names = archive.namelist()
             for name in names:
