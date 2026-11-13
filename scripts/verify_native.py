@@ -26,6 +26,7 @@ def verify(archive_path, output, smoke=False):
         # macOS temporary paths commonly spell /private/var as /var. Compare
         # resolved spellings on both sides of the archive containment check.
         root = pathlib.Path(temporary).resolve()
+        file_modes = {}
         with zipfile.ZipFile(archive_path) as archive:
             names = archive.namelist()
             for name in names:
@@ -35,7 +36,9 @@ def verify(archive_path, output, smoke=False):
                 raw = archive.read(name)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(raw)
-                path.chmod((archive.getinfo(name).external_attr >> 16) & 0o777 or 0o644)
+                mode = (archive.getinfo(name).external_attr >> 16) & 0o777 or 0o644
+                file_modes[path] = mode
+                path.chmod(mode)
         package = next(root.iterdir())
         checksums = (package / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines()
         for entry in checksums:
@@ -56,8 +59,10 @@ def verify(archive_path, output, smoke=False):
             magic, cpu, _, kind = struct.unpack_from("<IIII", raw)
             if (magic, cpu, kind) != (0xFEEDFACF, expected, 2):
                 raise ValueError("Wrong Mach-O executable architecture")
-            if not binary.stat().st_mode & 0o111:
+            if not file_modes[binary] & 0o111:
                 raise ValueError("Mac executable permission was lost in ZIP")
+            if sys.platform != "win32" and not binary.stat().st_mode & 0o111:
+                raise ValueError("Mac executable permission was lost during extraction")
         report = {"status": "passed", "target": target, "source_commit": identity["source_commit"],
                   "package_files_verified": len(checksums), "executable_sha256": sha(raw),
                   "native_ui_smoke": "not_run", "model_requests": 0, "analysis_tools": 0}
