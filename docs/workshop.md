@@ -6,7 +6,7 @@ The opening twenty minutes teaches a small connected path. The [124-type catalog
 
 ## Prepare before the clock starts
 
-Use the matching source/release package. Windows is the verified desktop target; other platforms remain unverified. Source builds need a supported Rust MSVC toolchain, the Microsoft C++ linker/Windows SDK, and an OpenGL-capable desktop. The manifest requires Rust 1.92 or newer; the local teaching checks used rustc/cargo 1.94.1. Python 3.8+ is needed only for the workshop verifier and document tooling.
+Use the matching source/release package. Windows is the verified desktop target; other platforms remain unverified. Source builds need a supported Rust MSVC toolchain, the Microsoft C++ linker/Windows SDK, and an OpenGL-capable desktop. The manifest requires Rust 1.92 or newer; the local teaching checks used rustc/cargo 1.94.1. Python 3.8+ runs the workshop verifier; rebuilding the PDF and release package requires Python 3.11+.
 
 Run from the repository root before the session:
 
@@ -65,13 +65,13 @@ To show the error live in a normal Cargo example, copy the exercise to an untrac
 
 ```sh
 # PowerShell
-Copy-Item workshop/exercises/wrong_coordinate.rs examples/live_workshop.rs
+Get-Content workshop/exercises/wrong_coordinate.rs -Raw | Set-Content examples/live_workshop.rs
 cargo run --locked --example live_workshop
-Copy-Item workshop/exercises/coordinate_answer.rs examples/live_workshop.rs
+Get-Content workshop/exercises/coordinate_answer.rs -Raw | Set-Content examples/live_workshop.rs
 cargo run --locked --example live_workshop
 ```
 
-The intentional failure is expected. The corrected example prints `Ok(4660)`. A POSIX shell can use `cp` for the same copies. Remove the temporary example when finished.
+The intentional failure is expected. The corrected example prints `Ok(4660)`. Writing the content refreshes the working file's timestamp: PowerShell `Copy-Item` can preserve an older timestamp and let Cargo reuse stale output. A POSIX shell can use `cp` without timestamp preservation. Remove the temporary example when finished.
 
 **Ask:** Why not simply construct `FileOffset(address.0)`? **Answer:** That silences the type mismatch without establishing a mapping. In this fixture we know only that the owned two-byte buffer starts at offset zero. The declared address shown in checkpoint 5 is illustrative metadata, not a mapping to those bytes.
 
@@ -113,4 +113,4 @@ python scripts/check_workshop.py
 python scripts/check_catalogue.py --write
 ```
 
-The generator is deterministic and uses only the built-in synthetic fixture. The checker compares exact example outputs, rejects the wrong coordinate with the expected compiler error, runs the answer, regenerates both JSON files and reconstructs the saved replay offline. The 18-page companion workbook is generated and visually checked; see [its build and review instructions](workbook-build.md). Timed operator rehearsal and final release packaging remain separate checks.
+The generator is deterministic and uses only the built-in synthetic fixture. The checker compares exact example outputs, rejects the wrong coordinate with the expected compiler error, runs the answer, regenerates both JSON files and reconstructs the saved replay offline. The 18-page companion workbook is generated and visually checked; see [its build and review instructions](workbook-build.md). The [rehearsal record](rehearsal.md) separates measured operator work from the planned twenty-minute spoken route.

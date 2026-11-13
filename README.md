@@ -6,7 +6,11 @@ DIVULGE is a native Rust/egui workbench for AI-assisted reverse engineering. The
 
 The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 architecture. A companion workshop introduces Rust through the actual types behind the application.
 
-## Current foundation
+## Windows release
+
+The [0.1.0 release](https://github.com/superposition/DIVULGE/releases/tag/v0.1.0) includes the native executable, matching source, 18-page workbook, six Rust checkpoints and synthetic replay. Read [START-HERE](START-HERE.md) after extracting the package. [Release notes](docs/release-notes.md) and the [rehearsal record](docs/rehearsal.md) state the verified behavior and remaining limits.
+
+## Implemented workflow
 
 - Native File / Edit / View / Investigation / Analysis / Model / Help menus.
 - Selectable narrative and settled relationship layouts, branch/neighbor scopes, pinned positions, keyboard navigation and an accessible relationship list. See [graph navigation](docs/graph-navigation.md).
