@@ -21,11 +21,13 @@ The native packaging workflow also builds the same egui app as **`DIVULGE.app` f
 | Windows, Intel/AMD 64-bit | `DIVULGE-windows-release` / `windows-x86_64` | Extract the whole application ZIP, then run `divulge.exe`. |
 | M3 Mac, or another Apple Silicon Mac | `DIVULGE-macos-arm64-release` / `macos-arm64` | Extract the application ZIP, then open `DIVULGE.app`. You can copy the app to Applications. |
 
-For the **3D matrix and current Windows/M3 builds**, open [Native desktop packages in Actions](https://github.com/superposition/DIVULGE/actions/workflows/release-check.yml), choose a successful run for `native-desktop-portability`, and download your platform from **Artifacts**. GitHub may require sign-in. Extract that artifact download, then extract the application ZIP inside its `release` folder. The [tagged v0.1.0 Windows release](https://github.com/superposition/DIVULGE/releases/tag/v0.1.0) is the earlier version and does not include the new matrix or Mac package.
+For the **3D matrix and current Windows/M3 builds**, open [Native desktop packages in Actions](https://github.com/superposition/DIVULGE/actions/workflows/release-check.yml), choose the latest successful run for `main`, and download your platform from **Artifacts**. GitHub may require sign-in. Extract that artifact download, then extract the application ZIP inside its `release` folder. The [tagged v0.1.0 Windows release](https://github.com/superposition/DIVULGE/releases/tag/v0.1.0) is the earlier version and does not include the new matrix or Mac package.
 
 Reading the built-in example or a saved investigation needs no Rust installation, model credentials, analysis tools or background service. The Mac app is locally signed but not Apple-notarized; if macOS blocks it, review the app and approve it through **System Settings > Privacy & Security > Open Anyway**. More build and platform details are in [native targets](docs/native-targets.md).
 
 ### Your first investigation
+
+Use **File > New investigation** (**Ctrl+N** on Windows, **Command+N** on Mac) for a blank case. It clears the previous source, graph, 3D matrix, selection and case history; unsaved changes still prompt before being discarded. **File > Load workshop example** loads the teaching case separately.
 
 1. Launch the app. The opening screen contains a synthetic two-byte example, so you can explore immediately.
 2. Select a record in the left **Investigation** tree or a node in **Graph**. Read its question, bytes, interpretation and remaining uncertainty in **Harness Insight** on the right. **Center selected** restores readable labels; **Fit scope** shows the current overview.

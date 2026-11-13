@@ -195,6 +195,29 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn saving_and_reopening_a_blank_case_does_not_invent_evidence() {
+        let path = std::env::temp_dir().join(format!(
+            "divulge-empty-{}-{}.json",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let empty = Investigation::empty();
+        let history = crate::history::History::new(&empty, "New investigation").unwrap();
+        save_history(&path, &history).unwrap();
+        let restored = load_history(&path).unwrap();
+        fs::remove_file(path).unwrap();
+        assert_eq!(
+            serde_json::to_value(restored.session()).unwrap(),
+            serde_json::to_value(empty).unwrap()
+        );
+        assert!(restored.events().is_empty());
+        assert!(restored.unfinished_jobs().is_empty());
+    }
+
+    #[test]
     fn whole_file_matrix_uses_the_hashed_read_beyond_the_saved_preview() {
         let path = std::env::temp_dir().join(format!(
             "divulge-matrix-{}-{}",

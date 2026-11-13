@@ -227,7 +227,35 @@ pub struct Investigation {
 }
 
 impl Investigation {
+    /// A genuinely blank case, with no teaching fixture or retained evidence.
+    pub fn empty() -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            title: "Untitled investigation".into(),
+            objective: String::new(),
+            origin: Origin::LocalArtifact,
+            artifact: None,
+            records: Vec::new(),
+            edges: Vec::new(),
+            disassemblies: Vec::new(),
+            ai_runs: Vec::new(),
+            rea_runs: Vec::new(),
+        }
+    }
+
     pub fn validate(&self) -> Result<(), String> {
+        if self.records.is_empty()
+            && (self.origin != Origin::LocalArtifact
+                || self.artifact.is_some()
+                || !self.edges.is_empty()
+                || !self.disassemblies.is_empty()
+                || !self.ai_runs.is_empty()
+                || !self.rea_runs.is_empty())
+        {
+            return Err(
+                "A blank investigation cannot retain an artifact, evidence or tool runs".into(),
+            );
+        }
         if self.rea_runs.len() > 16 {
             return Err("Too many REA runs".into());
         }
@@ -318,8 +346,8 @@ impl Investigation {
                 self.schema_version
             ));
         }
-        if self.records.is_empty() || self.records.len() > 200 || self.edges.len() > 1_000 {
-            return Err("This foundation supports 1-200 records and at most 1,000 edges".into());
+        if self.records.len() > 200 || self.edges.len() > 1_000 {
+            return Err("Investigations support at most 200 records and 1,000 edges".into());
         }
         if self.disassemblies.len() > 16 {
             return Err("An investigation supports at most 16 bounded disassembly runs".into());
@@ -886,6 +914,26 @@ pub fn read_u16_le(bytes: &[u8], offset: FileOffset) -> Result<u16, &'static str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blank_cases_are_valid_but_cannot_hide_retained_evidence() {
+        let empty = Investigation::empty();
+        empty.validate().unwrap();
+        assert!(empty.records.is_empty());
+        assert!(empty.artifact.is_none());
+        let mut workshop = Investigation::workshop();
+        workshop.records.clear();
+        assert!(workshop.validate().is_err());
+        let mut stale = empty;
+        stale.artifact = Some(Artifact {
+            name: "stale.bin".into(),
+            length: 2,
+            sha256: crate::fwsc::digest(&[0x34, 0x12]),
+            preview: vec![0x34, 0x12],
+            firmware: None,
+        });
+        assert!(stale.validate().is_err());
+    }
 
     #[test]
     fn checked_read_distinguishes_value_and_missing_bytes() {

@@ -22,7 +22,7 @@ Generated from maintained descriptions in workshop/type-catalogue.json and check
 | [Origin](../src/domain.rs#L187): WorkshopFixture or LocalArtifact; keeps synthetic material distinct | Investigation builders and checked record import | Validated as part of an Investigation; a valid record does not establish semantic truth | Graph and Harness Insight | Mixing evidence, interpretation and unknowns |
 | [Artifact](../src/domain.rs#L193): Recorded name, byte length, hash, preview and optional parsed firmware report | Investigation builders and checked record import | Validated as part of an Investigation; a valid record does not establish semantic truth | Graph and Harness Insight | Mixing evidence, interpretation and unknowns |
 | [Investigation](../src/domain.rs#L212): Canonical record store with edges and retained disassembly/model/REA receipts | Investigation builders and checked record import | Validated as part of an Investigation; a valid record does not establish semantic truth | Graph and Harness Insight | Mixing evidence, interpretation and unknowns |
-| [Attention](../src/domain.rs#L810): Window reading cursor, available frontier, follow/hold state and reviewed arrivals; not serialized evidence | Investigation builders and checked record import | Validated as part of an Investigation; a valid record does not establish semantic truth | Graph and Harness Insight | Mixing evidence, interpretation and unknowns |
+| [Attention](../src/domain.rs#L838): Window reading cursor, available frontier, follow/hold state and reviewed arrivals; not serialized evidence | Investigation builders and checked record import | Validated as part of an Investigation; a valid record does not establish semantic truth | Graph and Harness Insight | Mixing evidence, interpretation and unknowns |
 
 ## evidence
 
@@ -194,8 +194,8 @@ Generated from maintained descriptions in workshop/type-catalogue.json and check
 | Type and meaning | Created by | Valid states / boundary | Find it in the app | Mistake made harder |
 | --- | --- | --- | --- | --- |
 | [FileCommand](../src/app.rs#L20): Private requested file action pending prerequisite/unsaved checks | Native event handlers and worker lifecycle | Window state and deliberate file commands; unsaved changes checked before replacement | Menus, panels and shared selection | Losing edits or publishing into a replacement case |
-| [CodeJob](../src/app.rs#L30): Private running disassembly identity, receiver and starting reading state | Native event handlers and worker lifecycle | Window state and deliberate file commands; unsaved changes checked before replacement | Menus, panels and shared selection | Losing edits or publishing into a replacement case |
-| [DivulgeApp](../src/app.rs#L39): Native application state tying records, workers, graph and inspector together | Native event handlers and worker lifecycle | Window state and deliberate file commands; unsaved changes checked before replacement | Menus, panels and shared selection | Losing edits or publishing into a replacement case |
+| [CodeJob](../src/app.rs#L31): Private running disassembly identity, receiver and starting reading state | Native event handlers and worker lifecycle | Window state and deliberate file commands; unsaved changes checked before replacement | Menus, panels and shared selection | Losing edits or publishing into a replacement case |
+| [DivulgeApp](../src/app.rs#L40): Native application state tying records, workers, graph and inspector together | Native event handlers and worker lifecycle | Window state and deliberate file commands; unsaved changes checked before replacement | Menus, panels and shared selection | Losing edits or publishing into a replacement case |
 
 ## graph
 

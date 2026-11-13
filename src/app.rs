@@ -18,6 +18,7 @@ use std::{
 };
 
 enum FileCommand {
+    New,
     Workshop,
     OpenArtifact,
     OpenSession,
@@ -87,12 +88,37 @@ pub struct DivulgeApp {
 impl DivulgeApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         configure_style(&cc.egui_ctx);
+        let mut app = Self::workshop_state();
+        let args: Vec<String> = std::env::args().collect();
+        let mut restored = false;
+        if let Some(index) = args.iter().position(|arg| arg == "--session")
+            && let Some(path) = args.get(index + 1)
+        {
+            match storage::load_history(&PathBuf::from(path)) {
+                Ok(history) => {
+                    app.replace(history.session().clone(), false);
+                    app.history = history;
+                    app.save_path = Some(PathBuf::from(path));
+                    restored = true;
+                }
+                Err(error) => app.error = Some(error),
+            }
+        }
+        if let Some(index) = args.iter().position(|arg| arg == "--artifact")
+            && let Some(path) = args.get(index + 1)
+        {
+            app.inspect(PathBuf::from(path), &cc.egui_ctx, restored);
+        }
+        app
+    }
+
+    fn workshop_state() -> Self {
         let session = Investigation::workshop();
         let mut attention = Attention::all(session.records.len());
         attention.select(3);
         let mut graph = GraphView::default();
         graph.reset(&session);
-        let mut app = Self {
+        Self {
             matrix: preview_matrix(&session),
             matrix_view: Default::default(),
             matrix_fresh: false,
@@ -144,28 +170,7 @@ impl DivulgeApp {
             pending_close: false,
             artifact_worker: None,
             imported_fresh: false,
-        };
-        let args: Vec<String> = std::env::args().collect();
-        let mut restored = false;
-        if let Some(index) = args.iter().position(|arg| arg == "--session")
-            && let Some(path) = args.get(index + 1)
-        {
-            match storage::load_history(&PathBuf::from(path)) {
-                Ok(history) => {
-                    app.replace(history.session().clone(), false);
-                    app.history = history;
-                    app.save_path = Some(PathBuf::from(path));
-                    restored = true;
-                }
-                Err(error) => app.error = Some(error),
-            }
         }
-        if let Some(index) = args.iter().position(|arg| arg == "--artifact")
-            && let Some(path) = args.get(index + 1)
-        {
-            app.inspect(PathBuf::from(path), &cc.egui_ctx, restored);
-        }
-        app
     }
 
     fn selected(&self) -> &divulge::domain::Record {
@@ -254,7 +259,8 @@ impl DivulgeApp {
         }
         let replaces = matches!(
             command,
-            FileCommand::Workshop
+            FileCommand::New
+                | FileCommand::Workshop
                 | FileCommand::OpenArtifact
                 | FileCommand::OpenSession
                 | FileCommand::RecoverSession
@@ -274,6 +280,16 @@ impl DivulgeApp {
         )
         .expect("validated replacement");
         self.history_view = Default::default();
+        self.inspector = Default::default();
+        self.error = None;
+        self.activity.clear();
+        self.show_help = false;
+        self.show_about = false;
+        self.attach_source = false;
+        self.close_after_job = false;
+        self.pending_close = false;
+        self.confirm_discard = false;
+        self.pending = None;
         self.history_dirty = false;
         self.tracked_jobs.clear();
         self.ai.reset();
@@ -289,7 +305,8 @@ impl DivulgeApp {
         self.show_code = false;
         self.session = session;
         self.attention = Attention::all(self.session.records.len());
-        self.attention.select(3.min(self.session.records.len() - 1));
+        self.attention
+            .select(3.min(self.session.records.len().saturating_sub(1)));
         self.show_data = self
             .session
             .artifact
@@ -347,9 +364,16 @@ impl DivulgeApp {
             return;
         };
         match command {
+            FileCommand::New => {
+                self.replace(Investigation::empty(), false);
+                self.status =
+                    "New investigation. Open an artifact or saved investigation to begin.".into();
+                ctx.request_repaint();
+            }
             FileCommand::Workshop => {
                 self.replace(Investigation::workshop(), false);
                 self.status = "Loaded the synthetic workshop fixture.".into();
+                ctx.request_repaint();
             }
             FileCommand::OpenArtifact => {
                 if let Some(path) = rfd::FileDialog::new()
@@ -428,6 +452,9 @@ impl DivulgeApp {
     }
 
     fn restart_replay(&mut self) {
+        if self.session.records.is_empty() {
+            return;
+        }
         self.attention = Attention::all(1);
         self.next_tick = Instant::now() + Duration::from_millis(1600);
         self.playing = true;
@@ -558,7 +585,11 @@ impl DivulgeApp {
     fn menus(&mut self, ui: &mut egui::Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
-                if ui.button("New workshop investigation").clicked() {
+                if ui.button(format!("New investigation                 {}+N", command_label())).clicked() {
+                    self.request(FileCommand::New);
+                    ui.close();
+                }
+                if ui.button("Load workshop example").clicked() {
                     self.request(FileCommand::Workshop);
                     ui.close();
                 }
@@ -599,7 +630,7 @@ impl DivulgeApp {
                     self.request(FileCommand::SaveAs);
                     ui.close();
                 }
-                if ui.button("Export portable review...").clicked() {
+                if ui.add_enabled(!self.session.records.is_empty(), egui::Button::new("Export portable review...")).clicked() {
                     self.history_view.export_open = true;
                     ui.close();
                 }
@@ -609,7 +640,7 @@ impl DivulgeApp {
                 }
             });
             ui.menu_button("Edit", |ui| {
-                if ui.button("Copy selected insight").clicked() {
+                if ui.add_enabled(!self.session.records.is_empty(), egui::Button::new("Copy selected insight")).clicked() {
                     let selected = self.selected();
                     ui.ctx().copy_text(format!(
                         "{}\n{}\n\nEvidence: {}\nUncertainty: {}",
@@ -620,14 +651,14 @@ impl DivulgeApp {
                     ));
                     ui.close();
                 }
-                if ui.button(format!("Find in investigation          {}+F", command_label())).clicked() {
+                if ui.add_enabled(!self.session.records.is_empty(), egui::Button::new(format!("Find in investigation          {}+F", command_label()))).clicked() {
                     self.show_tree = true;
                     ui.memory_mut(|memory| memory.request_focus(egui::Id::new("record_filter")));
                     ui.close();
                 }
             });
             ui.menu_button("View", |ui| {
-                if ui.button("Case history and review...").clicked() {
+                if ui.add_enabled(!self.session.records.is_empty(), egui::Button::new("Case history and review...")).clicked() {
                     self.history_view.open = true;
                     ui.close();
                 }
@@ -666,6 +697,9 @@ impl DivulgeApp {
                 }
             });
             ui.menu_button("Investigation", |ui| {
+                if self.session.records.is_empty() {
+                    ui.disable();
+                }
                 if ui.button("Replay from beginning").clicked() {
                     self.restart_replay();
                     ui.close();
@@ -718,21 +752,21 @@ impl DivulgeApp {
                     self.open_code();
                     ui.close();
                 }
-                if ui.button("REA original-file evidence...").clicked() {
+                if ui.add_enabled(!self.session.records.is_empty(), egui::Button::new("REA original-file evidence...")).clicked() {
                     self.rea.open = true;
                     ui.close();
                 }
-                if ui.button("Propose next step with OMP...").clicked() {
+                if ui.add_enabled(!self.session.records.is_empty(), egui::Button::new("Propose next step with OMP...")).clicked() {
                     self.ai.open = true;
                     ui.close();
                 }
             });
             ui.menu_button("Model", |ui| {
-                if ui.button("Run bounded investigation...").clicked() {
+                if ui.add_enabled(!self.session.records.is_empty(), egui::Button::new("Run bounded investigation...")).clicked() {
                     self.engine_view.prepare(&self.session, self.selected().id);
                     ui.close();
                 }
-                if ui.button("OMP models and next step...").clicked() {
+                if ui.add_enabled(!self.session.records.is_empty(), egui::Button::new("OMP models and next step...")).clicked() {
                     self.ai.open = true;
                     ui.close();
                 }
@@ -760,7 +794,13 @@ impl DivulgeApp {
                 if ui.button("Save").clicked() {
                     self.request(FileCommand::Save);
                 }
-                if ui.button("AI cycle").clicked() {
+                if ui
+                    .add_enabled(
+                        !self.session.records.is_empty(),
+                        egui::Button::new("AI cycle"),
+                    )
+                    .clicked()
+                {
                     self.engine_view.prepare(&self.session, self.selected().id);
                 }
                 if ui
@@ -774,11 +814,14 @@ impl DivulgeApp {
                 }
                 ui.separator();
                 if ui
-                    .button(if self.playing {
-                        "Pause replay"
-                    } else {
-                        "Play replay"
-                    })
+                    .add_enabled(
+                        !self.session.records.is_empty(),
+                        egui::Button::new(if self.playing {
+                            "Pause replay"
+                        } else {
+                            "Play replay"
+                        }),
+                    )
                     .clicked()
                 {
                     if self.playing {
@@ -1210,6 +1253,9 @@ impl DivulgeApp {
     fn focus_attention(&mut self) {
         self.show_code = false;
         self.show_data = false;
+        if self.session.records.is_empty() {
+            return;
+        }
         self.graph.focus_result(
             &self.session,
             self.attention.selected_index,
@@ -1226,73 +1272,79 @@ impl DivulgeApp {
         }
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
-        let selected = self.selected().id;
-        if let Some(index) = self
-            .history_view
-            .show(ctx, &self.history, &mut self.session, selected)
+        if let Some(selected) = self
+            .session
+            .records
+            .get(self.attention.selected_index)
+            .map(|r| r.id)
         {
-            self.dirty = true;
-            self.history_dirty = true;
-            self.attention.visible_count = self.session.records.len();
-            self.attention.select(index);
-            self.graph.append_records(&self.session);
-            self.show_code = false;
-            self.show_data = false;
-            self.graph
-                .focus_result(&self.session, index, self.attention.visible_count);
+            if let Some(index) =
+                self.history_view
+                    .show(ctx, &self.history, &mut self.session, selected)
+            {
+                self.dirty = true;
+                self.history_dirty = true;
+                self.attention.visible_count = self.session.records.len();
+                self.attention.select(index);
+                self.graph.append_records(&self.session);
+                self.show_code = false;
+                self.show_data = false;
+                self.graph
+                    .focus_result(&self.session, index, self.attention.visible_count);
+            }
+            if let Some(index) = self.rea.show(
+                ctx,
+                &self.session,
+                self.source_path.as_deref(),
+                self.generation,
+                self.engine.busy()
+                    || self.code_job.is_some()
+                    || self.artifact_worker.is_some()
+                    || self.ai.job.is_some(),
+            ) {
+                self.attention.select(index);
+                self.show_code = false;
+                self.show_data = false;
+                self.graph
+                    .focus_result(&self.session, index, self.attention.visible_count);
+            }
+            let action = self.ai.show(
+                ctx,
+                &self.session,
+                self.attention.visible_count,
+                selected,
+                self.generation,
+                self.engine.busy()
+                    || self.code_job.is_some()
+                    || self.artifact_worker.is_some()
+                    || self.rea.job.is_some(),
+            );
+            if let Some(index) = action.review {
+                self.attention.select(index);
+                self.show_code = false;
+                self.show_data = false;
+                self.graph
+                    .focus_result(&self.session, index, self.attention.visible_count);
+            }
+            if let Some((offset, length)) = action.stage {
+                self.open_code();
+                self.code.stage(offset, length);
+            }
+            let target = divulge::engine::Target::from_session(&self.session, self.image.clone());
+            let action = self.engine_view.show(
+                ctx,
+                &self.session,
+                &self.engine,
+                &target,
+                &mut self.ai.model,
+                self.ai.catalogue.as_ref(),
+                self.code_job.is_some()
+                    || self.artifact_worker.is_some()
+                    || self.rea.job.is_some()
+                    || self.ai.job.is_some(),
+            );
+            self.engine_action(action, ctx);
         }
-        if let Some(index) = self.rea.show(
-            ctx,
-            &self.session,
-            self.source_path.as_deref(),
-            self.generation,
-            self.engine.busy()
-                || self.code_job.is_some()
-                || self.artifact_worker.is_some()
-                || self.ai.job.is_some(),
-        ) {
-            self.attention.select(index);
-            self.show_code = false;
-            self.show_data = false;
-            self.graph
-                .focus_result(&self.session, index, self.attention.visible_count);
-        }
-        let action = self.ai.show(
-            ctx,
-            &self.session,
-            self.attention.visible_count,
-            self.selected().id,
-            self.generation,
-            self.engine.busy()
-                || self.code_job.is_some()
-                || self.artifact_worker.is_some()
-                || self.rea.job.is_some(),
-        );
-        if let Some(index) = action.review {
-            self.attention.select(index);
-            self.show_code = false;
-            self.show_data = false;
-            self.graph
-                .focus_result(&self.session, index, self.attention.visible_count);
-        }
-        if let Some((offset, length)) = action.stage {
-            self.open_code();
-            self.code.stage(offset, length);
-        }
-        let target = divulge::engine::Target::from_session(&self.session, self.image.clone());
-        let action = self.engine_view.show(
-            ctx,
-            &self.session,
-            &self.engine,
-            &target,
-            &mut self.ai.model,
-            self.ai.catalogue.as_ref(),
-            self.code_job.is_some()
-                || self.artifact_worker.is_some()
-                || self.rea.job.is_some()
-                || self.ai.job.is_some(),
-        );
-        self.engine_action(action, ctx);
         egui::Window::new("About DIVULGE").open(&mut self.show_about).resizable(false).show(ctx, |ui| {
             ui.heading(format!("DIVULGE {}", env!("CARGO_PKG_VERSION")));
             ui.label("An investigation workbench for understanding how we know.");
@@ -1329,11 +1381,11 @@ impl DivulgeApp {
                 });
         }
         if self.confirm_discard || self.pending_close {
-            egui::Window::new("Unsaved notes")
+            egui::Window::new("Unsaved investigation")
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label("Your current investigation has unsaved notes.");
+                    ui.label("Your current investigation has unsaved changes.");
                     ui.horizontal(|ui| {
                         if ui.button("Keep editing").clicked() {
                             self.pending = None;
@@ -1589,7 +1641,49 @@ impl eframe::App for DivulgeApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.draw(ui);
+    }
+}
+
+impl DivulgeApp {
+    fn empty_ui(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::bottom("empty_status")
+            .frame(egui::Frame::new().fill(PANEL).inner_margin(14))
+            .show(ui, |ui| {
+                ui.label(RichText::new("0 records · No source loaded").color(MUTED));
+                ui.label(&self.status);
+            });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(BACKGROUND).inner_margin(36))
+            .show(ui, |ui| {
+                ui.add_space(48.0);
+                eyebrow(ui, "NEW INVESTIGATION");
+                ui.add_space(10.0);
+                ui.heading("Start with evidence");
+                ui.add_space(12.0);
+                ui.label("This investigation is empty. Open a local artifact to inspect its bytes, or reopen a saved investigation.");
+                ui.add_space(18.0);
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("Open artifact...").clicked() {
+                        self.request(FileCommand::OpenArtifact);
+                    }
+                    if ui.button("Open saved investigation...").clicked() {
+                        self.request(FileCommand::OpenSession);
+                    }
+                });
+                ui.add_space(24.0);
+                ui.label(RichText::new("Learning DIVULGE?").color(MUTED));
+                if ui.button("Load workshop example").clicked() {
+                    self.request(FileCommand::Workshop);
+                }
+            });
+    }
+
+    fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::N)) {
+            self.request(FileCommand::New);
+        }
         if ctx.input_mut(|input| {
             input.consume_key(
                 egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
@@ -1604,7 +1698,9 @@ impl eframe::App for DivulgeApp {
         if ctx.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
             self.request(FileCommand::Save);
         }
-        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::F)) {
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::F))
+            && !self.session.records.is_empty()
+        {
             self.show_tree = true;
             ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("record_filter")));
         }
@@ -1628,6 +1724,14 @@ impl eframe::App for DivulgeApp {
                     .inner_margin(egui::Margin::symmetric(14, 11)),
             )
             .show(ui, |ui| self.toolbar(ui));
+        if self.session.records.is_empty() {
+            self.empty_ui(ui);
+            self.dialogs(&ctx);
+            self.sync_jobs();
+            self.capture_history();
+            self.process_pending(&ctx);
+            return;
+        }
         egui::Panel::bottom("attention")
             .resizable(false)
             .frame(
@@ -1773,4 +1877,143 @@ fn configure_style(ctx: &egui::Context) {
     style.visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(37, 46, 57);
     style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(50, 64, 74);
     ctx.set_style_of(egui::Theme::Dark, style);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_clears_the_source_history_selection_and_case_views() {
+        let mut app = DivulgeApp::workshop_state();
+        let artifact = divulge::domain::Artifact {
+            name: "previous.bin".into(),
+            length: 2,
+            sha256: divulge::fwsc::digest(&[0x34, 0x12]),
+            preview: vec![0x34, 0x12],
+            firmware: None,
+        };
+        app.replace(Investigation::from_artifact(artifact), true);
+        app.session.records[0].note = "Previous case note".into();
+        app.history.capture(&app.session).unwrap();
+        app.source_path = Some("previous.bin".into());
+        app.save_path = Some("previous.divulge.json".into());
+        app.matrix_fresh = true;
+        app.show_matrix = true;
+        app.show_code = true;
+        app.show_data = true;
+        app.code.selected_run = Some(RunId(42));
+        app.code.selected_instruction = 12;
+        app.code.config.executable = "my-objdump".into();
+        app.filter = "previous".into();
+        app.activity.push("Previous case activity".into());
+        app.error = Some("Previous case error".into());
+        app.ai.open = true;
+        app.ai.latest = Some(0);
+        app.ai.model = "chosen-model".into();
+        app.rea.open = true;
+        app.history_view.open = true;
+        app.playing = true;
+        app.attention.held = true;
+        let generation = app.generation;
+
+        let ctx = egui::Context::default();
+        app.request(FileCommand::New);
+        app.process_pending(&ctx);
+
+        app.session.validate().unwrap();
+        assert!(app.session.records.is_empty() && app.session.edges.is_empty());
+        assert!(app.session.artifact.is_none());
+        assert!(app.history.events().is_empty());
+        assert!(app.history.session().records.is_empty());
+        assert!(app.source_path.is_none() && app.save_path.is_none() && app.image.is_none());
+        assert!(app.matrix.is_none() && !app.matrix_fresh && !app.show_matrix);
+        assert!(!app.show_code && !app.show_data && !app.playing && !app.attention.held);
+        assert_eq!(
+            (app.attention.visible_count, app.attention.selected_index),
+            (0, 0)
+        );
+        assert!(app.code.selected_run.is_none());
+        assert_eq!(app.code.selected_instruction, 0);
+        assert_eq!(app.code.config.executable, "my-objdump");
+        assert_eq!(app.ai.model, "chosen-model");
+        assert!(!app.ai.open && app.ai.latest.is_none() && !app.rea.open && !app.history_view.open);
+        assert!(app.filter.is_empty() && app.activity.is_empty() && app.error.is_none());
+        assert!(!app.imported_fresh && !app.dirty && !app.history_dirty);
+        assert_eq!(app.generation, generation + 1);
+    }
+
+    #[test]
+    fn new_keeps_unsaved_work_and_active_jobs_guarded() {
+        let mut app = DivulgeApp::workshop_state();
+        app.session.records[0].note = "Keep this note".into();
+        app.dirty = true;
+        app.request(FileCommand::New);
+        app.process_pending(&egui::Context::default());
+        assert!(app.confirm_discard);
+        assert_eq!(app.session.records[0].note, "Keep this note");
+        assert!(matches!(app.pending, Some(FileCommand::New)));
+
+        // The same confirmation path used by Discard and continue.
+        app.confirm_discard = false;
+        app.dirty = false;
+        app.process_pending(&egui::Context::default());
+        assert!(app.session.records.is_empty());
+
+        app.replace(Investigation::workshop(), false);
+        let (_send, receive) = mpsc::channel();
+        app.artifact_worker = Some(receive);
+        app.request(FileCommand::New);
+        app.process_pending(&egui::Context::default());
+        assert_eq!(app.session.records.len(), 6);
+        assert!(app.pending.is_none());
+        assert!(app.status.contains("active job"));
+    }
+
+    #[test]
+    fn new_shortcut_renders_blank_and_workshop_is_an_explicit_separate_action() {
+        let ctx = egui::Context::default();
+        configure_style(&ctx);
+        let mut app = DivulgeApp::workshop_state();
+        let input = |events| egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1280.0, 720.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(
+            input(vec![egui::Event::Key {
+                key: egui::Key::N,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+            }]),
+            |ui| app.draw(ui),
+        );
+        assert!(app.session.records.is_empty());
+        let output = ctx.run_ui(input(vec![]), |ui| app.draw(ui));
+        let rendered: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::epaint::Shape::Text(t) => Some(t.galley.job.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(rendered.contains(&"Start with evidence"));
+        assert!(rendered.contains(&"0 records · No source loaded"));
+        assert!(!rendered.contains(&"From bytes to evidence"));
+        app.follow_latest();
+        app.restart_replay();
+        assert!(!app.playing);
+
+        app.request(FileCommand::Workshop);
+        app.process_pending(&ctx);
+        assert_eq!(app.session.records.len(), 6);
+        assert_eq!(app.session.origin, Origin::WorkshopFixture);
+        let _ = ctx.run_ui(input(vec![]), |ui| app.draw(ui));
+    }
 }

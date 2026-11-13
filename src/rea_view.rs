@@ -32,8 +32,12 @@ impl Default for ReaView {
 }
 impl ReaView {
     pub fn reset(&mut self) {
+        self.open = false;
         self.latest = None;
         self.status.clear();
+        self.offset = "0x0".into();
+        self.length = 4096;
+        self.block_size = 4096;
     }
     pub fn poll(&mut self, session: &mut Investigation, generation: u64) -> bool {
         let Some(job) = &self.job else { return false };

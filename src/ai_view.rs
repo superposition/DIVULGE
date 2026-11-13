@@ -24,9 +24,11 @@ pub struct Action {
 }
 impl AiView {
     pub fn reset(&mut self) {
+        self.open = false;
         self.latest = None;
         self.draft.clear();
         self.status.clear();
+        self.search.clear();
     }
     pub fn poll(&mut self, session: &mut Investigation, generation: u64) -> bool {
         let mut finished = None;
