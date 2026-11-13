@@ -394,7 +394,7 @@ fn decode_package_bytes(raw: &[u8]) -> Result<(FirmwareReport, Option<Vec<u8>>),
         );
     }
     let mut entries = Vec::new();
-    for record in logical[directory_range].chunks_exact(ENTRY_SIZE) {
+    for record in logical[directory_range].as_chunks::<ENTRY_SIZE>().0 {
         let mut decoded = record.to_vec();
         cipher(&mut decoded, 0xffff);
         let offset = u64::from(u32_at(&decoded, 8)?);
@@ -517,7 +517,7 @@ fn decode_application(
     }
     let directory_range = checked_range(area.len() as u64, 32, u64::from(first.offset) - 32)?;
     let mut directory = Vec::new();
-    for (index, bytes) in area[directory_range].chunks_exact(32).enumerate() {
+    for (index, bytes) in area[directory_range].as_chunks::<32>().0.iter().enumerate() {
         if bytes.iter().all(|b| *b == 0xff) || bytes.iter().all(|b| *b == 0) {
             continue;
         }
