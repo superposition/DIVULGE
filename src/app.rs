@@ -550,13 +550,13 @@ impl DivulgeApp {
                     ui.close();
                 }
                 if ui
-                    .button("Open artifact...                 Ctrl+O")
+                    .button(format!("Open artifact...                 {}+O", command_label()))
                     .clicked()
                 {
                     self.request(FileCommand::OpenArtifact);
                     ui.close();
                 }
-                if ui.button("Open investigation...   Ctrl+Shift+O").clicked() {
+                if ui.button(format!("Open investigation...   {}+Shift+O", command_label())).clicked() {
                     self.request(FileCommand::OpenSession);
                     ui.close();
                 }
@@ -576,7 +576,7 @@ impl DivulgeApp {
                 }
                 ui.separator();
                 if ui
-                    .button("Save investigation              Ctrl+S")
+                    .button(format!("Save investigation              {}+S", command_label()))
                     .clicked()
                 {
                     self.request(FileCommand::Save);
@@ -607,7 +607,7 @@ impl DivulgeApp {
                     ));
                     ui.close();
                 }
-                if ui.button("Find in investigation          Ctrl+F").clicked() {
+                if ui.button(format!("Find in investigation          {}+F", command_label())).clicked() {
                     self.show_tree = true;
                     ui.memory_mut(|memory| memory.request_focus(egui::Id::new("record_filter")));
                     ui.close();
@@ -1524,17 +1524,20 @@ impl eframe::App for DivulgeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         if ctx.input_mut(|input| {
-            input.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::O)
+            input.consume_key(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::O,
+            )
         }) {
             self.request(FileCommand::OpenSession);
         }
-        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::O)) {
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
             self.request(FileCommand::OpenArtifact);
         }
-        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::S)) {
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
             self.request(FileCommand::Save);
         }
-        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::F)) {
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::F)) {
             self.show_tree = true;
             ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("record_filter")));
         }
@@ -1653,6 +1656,14 @@ impl eframe::App for DivulgeApp {
 
 fn eyebrow(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text).size(10.0).color(MUTED));
+}
+
+pub(crate) fn command_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Cmd"
+    } else {
+        "Ctrl"
+    }
 }
 
 fn configure_style(ctx: &egui::Context) {

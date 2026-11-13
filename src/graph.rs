@@ -520,7 +520,7 @@ impl GraphView {
                     (Navigation::MoveLeft,"Move selected left    Alt+Shift+Left"),(Navigation::MoveRight,"Move selected right    Alt+Shift+Right"),
                     (Navigation::MoveUp,"Move selected up    Alt+Shift+Up"),(Navigation::MoveDown,"Move selected down    Alt+Shift+Down"),
                 ] { if ui.button(label).clicked() { action = Some(nav); ui.close(); } }
-                ui.label("Tab / Shift+Tab and Enter operate controls and the record tree. Ctrl+F finds a record.");
+                ui.label(format!("Tab / Shift+Tab and Enter operate controls and the record tree. {}+F finds a record.", crate::app::command_label()));
             });
         });
         for (key, nav) in [

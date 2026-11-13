@@ -1,24 +1,49 @@
-name: Windows release package
+name: Native desktop packages
 
 on:
   workflow_dispatch:
+  push:
+    branches: [native-desktop-portability]
 
 permissions:
   contents: read
 
 jobs:
   package:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: DIVULGE-windows-release
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            artifact: DIVULGE-macos-arm64-release
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked --all-targets
       - run: python -m pip install -r workshop/pdf-requirements.txt
-      - run: python scripts/package_release.py
+      - run: python scripts/package_release.py --target ${{ matrix.target }}
+      - name: Verify Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem output/release/*windows*.zip | Select-Object -First 1
+          python scripts/verify_native.py $archive.FullName
+      - name: Verify and launch native Apple Silicon app
+        if: runner.os == 'macOS'
+        run: python scripts/verify_native.py output/release/*macos-arm64.zip --smoke
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: DIVULGE-windows-release
-          path: output/release/*
+          name: ${{ matrix.artifact }}
+          path: |
+            output/release/*
+            output/native-validation/*
           if-no-files-found: error

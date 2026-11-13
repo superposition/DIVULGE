@@ -6,9 +6,11 @@ DIVULGE is a native Rust/egui workbench for AI-assisted reverse engineering. The
 
 The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 architecture. A companion workshop introduces Rust through the actual types behind the application.
 
-## Windows release
+## Native desktop packages
 
 The [0.1.0 release](https://github.com/superposition/DIVULGE/releases/tag/v0.1.0) includes the native executable, matching source, 18-page workbook, six Rust checkpoints and synthetic replay. Read [START-HERE](START-HERE.md) after extracting the package. [Release notes](docs/release-notes.md) and the [rehearsal record](docs/rehearsal.md) state the verified behavior and remaining limits.
+
+The native packaging workflow also builds the same egui app as **`DIVULGE.app` for Apple Silicon macOS**, suitable for M1/M2/M3/M4 Macs. It runs the Rust tests on each host, verifies package hashes, and captures the Mac window using the synthetic workshop. See [native targets](docs/native-targets.md) for package contents, build commands and qualification boundaries. The existing tagged 0.1.0 download is the earlier Windows release; newer build artifacts identify their exact source commit.
 
 ## Implemented workflow
 
@@ -31,7 +33,7 @@ Bounded AI cycles support the synthetic byte fixture and freshly verified V15 ap
 
 ## Run
 
-Requires Rust 1.92 or newer and the native build prerequisites for your OS. Windows is the first validation target. The manifest enables native Linux window backends, but Linux and macOS have not yet been verified.
+Requires Rust 1.92 or newer and the native build prerequisites for your OS. Windows has the existing interactive validation. macOS has a native packaging/smoke workflow; the record distinguishes build/window checks from optional live-tool validation. Linux remains unverified.
 
 ```sh
 cargo run --locked
