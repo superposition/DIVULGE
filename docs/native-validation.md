@@ -146,3 +146,15 @@ After reinitializing Computer Use, the final graph build was inspected in a 1920
 The large native pass and the earlier compact pass cover both target layouts. No V15 case was saved or edited during these presentation checks. The unchanged case reconstructed 24 records and two events offline. The native window was then closed before opening the synthetic workshop for the remaining document and recovery exercises.
 
 The graph build passed hosted Windows formatting, Clippy, tests, doctests and build (run 43338369445). The subsequent lesson verifier exposed a hosted direct-rustc dependency-linking failure; its exercise now uses Cargo's dependency resolution. Local verification confirms all six outputs, the expected E0308 coordinate error, the working answer and deterministic offline replay.
+
+## Unsaved-note guard and explicit recovery
+
+2026-11-12, 1280x720 client: used a disposable copy of the generated seven-record workshop. Changed record 4's note to `Recovery rehearsal: the bytes are 34 12; intended meaning is still unknown.` and saved with Ctrl+S. Offline validation reconstructed three events, and the previous two-event save remained in `.bak`.
+
+Added a temporary suffix and attempted to close. The Unsaved notes dialog interrupted closure; Keep editing preserved the complete unsaved text. Ctrl+S retained the fourth event and rotated the previous three-event checkpoint into the backup. The app was closed normally. Only this disposable primary was then deliberately replaced with malformed JSON, with its complete prior state retained separately.
+
+Reopening the damaged copy displayed its parsing error and the available-backup message; no recovery occurred automatically. File > Recover previous save opened the original path's `.bak`. Record 4 showed the exact three-event checkpoint note, without the later temporary suffix. Ctrl+S required a new destination. Saving through the native dialog to a separate recovered file produced bytes identical to the validated backup, and the damaged primary remained unchanged. Recovery and reopening contacted no tool or model. The real V15 case and the shipped synthetic checkpoint were not edited.
+
+Native file dialogs expose multiple capture surfaces, including a 16x16 helper surface. Use the visible dialog surface and literal keyboard filename entry; a UI Automation value replacement changed displayed text without committing the filename to the dialog. A first Save As therefore created the default synthetic filename, which was identified by exact hash before cleanup. This was a Computer Use interaction issue; successful literal entry and the actual output file were independently checked.
+
+The final host-test pass found a cold-start cancellation race in the OMP bridge: a cancellation queued with the first request could wait for SDK imports until the transport's three-second stop deadline. The bridge now handles that queued cancellation before importing the SDK. The installed-Bun regression returned a correlated cancelled result in 0.07 seconds without a model request; release validation includes another full host-test pass.

@@ -20,6 +20,8 @@ const first = new Promise<any>(resolve => {
 try {
   await first;
   if(request.v!==1 || !['discover','propose'].includes(request.op)) throw Error('Unsupported bridge protocol');
+  // Stop queued with the first request must not pay the SDK's cold-start cost.
+  if(cancelled) { emit('cancelled',null); process.exit(0); }
   const root = process.env.DIVULGE_OMP_SDK || join(homedir(),'.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent');
   const load = (file: string) => import(pathToFileURL(join(root,file)).href);
   const {createAgentSession,Settings,SessionManager,discoverAuthStorage} = await load('src/index.ts');
