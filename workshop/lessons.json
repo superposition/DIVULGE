@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "app_version": "0.1.0",
+  "fixture": "synthetic bytes 34 12; never FM-1 evidence",
+  "lessons": [
+    {
+      "slug": "workshop_01_bytes",
+      "title": "The same bytes, two integer views",
+      "minutes": "02:00–05:00",
+      "ask": "Do the bytes change when we choose a different byte order?",
+      "predict": "Predict both u16 values before running the program.",
+      "live_edit": "Start with the little-endian line; add the big-endian conversion and print it.",
+      "explain": "u8 is one byte. [u8; 2] fixes the length in the type. &[u8] borrows a view. u16 is a chosen two-byte interpretation; the original meaning remains unknown.",
+      "find": "New workshop investigation: select record 3, then record 4. Change the endian selector in Harness Insight. The evidence bytes stay 34 12.",
+      "answer": "Little endian gives 4660; big endian gives 13330. Neither proves a firmware field type.",
+      "stdout": "Synthetic bytes: [34, 12]\nlittle-endian u16: 4660\nbig-endian u16: 13330\nIntended meaning: unknown\n"
+    },
+    {
+      "slug": "workshop_02_observation",
+      "title": "Give the observation an owner",
+      "minutes": "05:00–07:30",
+      "ask": "What must we retain so another person can check this observation?",
+      "predict": "Name a source location, the bytes and a description.",
+      "live_edit": "Fill the three Observation fields. Change only its description and rerun.",
+      "explain": "A struct keeps related fields together. Vec<u8> owns a growable sequence. String owns text. This is the application's actual Observation type, not a recovered target struct.",
+      "find": "Record 3 shows its file offset and bytes. Rust type annotations under View identify the host Observation type.",
+      "answer": "The description can change without changing the observed bytes. A meaningful source reference matters more than a plausible number.",
+      "stdout": "file+0x0: [34, 12]\nSynthetic teaching bytes / 2 bytes\nVec<u8> owns the bytes; String owns the description.\n"
+    },
+    {
+      "slug": "workshop_03_records",
+      "title": "Name the kind of claim",
+      "minutes": "07:30–10:00",
+      "ask": "Should a question, an observation and an explanation carry the same fields?",
+      "predict": "Assign a record kind to each step in the six-card teaching graph.",
+      "live_edit": "Write the Question, Observation and Explanation match arms, then inspect the remaining variants.",
+      "explain": "An enum represents alternatives. A match makes handling those alternatives explicit. RecordData separates observations, explanations and open questions. The wildcard here covers additional implemented variants, not unknown evidence.",
+      "find": "Graph card kind labels and the terminal header use the same RecordData. Record 5 is an Unknown carrying a question plan; record 6 is another Question.",
+      "answer": "The value 4660 belongs to an explanation. It cannot be relabeled as an observation merely because a model repeats it.",
+      "stdout": "#1 question\n#2 probe\n#3 observation\n#4 explanation\n#5 unknown\n#6 question\n"
+    },
+    {
+      "slug": "workshop_04_absence",
+      "title": "Absence and failure are different",
+      "minutes": "10:00–12:30",
+      "ask": "Is an unknown destination the same as a failed two-byte read?",
+      "predict": "Predict the full read, truncated read and destination outcomes.",
+      "live_edit": "Change the read from &bytes to &bytes[..1], then add Option<MappedAddress> = None.",
+      "explain": "Option<T> distinguishes Some(value) from None. Result<T, E> distinguishes Ok(value) from Err(reason). Missing information is not the number zero. An operation can succeed while its semantic meaning remains unknown.",
+      "find": "Select the final byte in the workshop inspector: the u16 view becomes unavailable. Unmapped addresses say unresolved. Failed or cancelled tool receipts remain separate from evidence.",
+      "answer": "The full read is Ok(4660). The short read is Err. None means no destination has been supplied; it is not address 0.",
+      "stdout": "Two bytes: Ok(4660)\nOne byte: Err(\"Two bytes are required\")\nDestination: unknown; no address was invented\n"
+    },
+    {
+      "slug": "workshop_05_coordinates",
+      "title": "Borrow data; distinguish coordinates",
+      "minutes": "12:30–16:00",
+      "ask": "Can a declared CPU address be passed directly to a file reader?",
+      "predict": "Predict whether wrong_coordinate.rs compiles, and whether the Vec remains usable after a borrowed read.",
+      "live_edit": "Borrow &bytes, run the intentional coordinate error, then replace the argument with FileOffset(0).",
+      "explain": "&[u8] lets a function read without taking ownership. FileOffset and MappedAddress wrap the same numeric representation but have different Rust types. A checked mapping establishes a relationship between spaces; changing the wrapper name does not.",
+      "find": "Harness Insight distinguishes file+, image offsets and declared addresses. In the synthetic fixture the mapped address is unresolved. The later V15 module shows the actual source map.",
+      "answer": "The compiler reports E0308: expected FileOffset, found MappedAddress. For this two-byte buffer, FileOffset(0) is valid. Do not fix the error by copying a CPU address into a file offset.",
+      "stdout": "Borrowed 2 bytes\nOwner still has: [34, 12]\nFile read: Ok(4660)\nDeclared address: 0x02000120\nThese coordinates need a checked map, not a cast.\n"
+    },
+    {
+      "slug": "workshop_06_evidence",
+      "title": "Connect an explanation to evidence",
+      "minutes": "16:00–18:00",
+      "ask": "What lets someone challenge an explanation after the model has stopped?",
+      "predict": "Find the observation ID cited by record 4 and state a limitation.",
+      "live_edit": "Resolve the evidence ID, print its title, then print the explanation's uncertainty and next step.",
+      "explain": "RecordId names a record in one investigation. ObservationId resolves only to an evidence role. Result and ? propagate a failed validation. A valid citation makes a claim traceable, but does not prove the claim is true.",
+      "find": "Select explanation 4 and follow evidence 3. Open the saved synthetic replay to see an analyst correction retained alongside the original explanation.",
+      "answer": "Record 4 cites observation 3. The bytes support a chosen integer view; they do not establish intended meaning. A format declaration or controlled example is a useful next probe.",
+      "stdout": "#4 / Derived\nEvidence #3: Two bytes: 34 12\nExplanation: u16::from_le_bytes([0x34, 0x12]) yields 4660 (0x1234). This is a reproducible interpretation of the bytes.\nLimitation: We have not established that the original author intended an integer, or what the value represents. These are synthetic teaching bytes, not FM-1 evidence.\nNext: Find a format declaration or a controlled example that assigns meaning to this field.\n"
+    }
+  ]
+}

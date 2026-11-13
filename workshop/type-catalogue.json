@@ -1,0 +1,355 @@
+{
+  "version": 1,
+  "scope": "Every top-level named Rust type declared in src, including macro-generated IDs and spans. Standard/library forms are explained separately; dependency internals are not invented as application types.",
+  "groups": [
+    {
+      "module": "domain",
+      "creator": "Investigation builders and checked record import",
+      "states": "Validated as part of an Investigation; a valid record does not establish semantic truth",
+      "ui": "Graph and Harness Insight",
+      "prevents": "Mixing evidence, interpretation and unknowns",
+      "types": {
+        "RecordId": "Stable nonzero identity within one investigation; independent of graph position",
+        "FileOffset": "u64 coordinate in an original file; range checked when used",
+        "MappedAddress": "u64 declared CPU address; does not imply observed runtime memory",
+        "Observation": "Owned bytes, a file offset and source description",
+        "Basis": "Observed, Derived or Inferred provenance for an explanation",
+        "RecordData": "Question, Probe, Observation, Firmware, Disassembly, Rea, Explanation, TypeHypothesis, Review or Unknown",
+        "HarnessInsight": "Question, purpose, action, observation, explanation, uncertainty and next step",
+        "QuestionPlan": "Why, steps, enables, answered_when and if_not fields for a question",
+        "Record": "Stable identity, kind, concise summary, insight, note and explicit question ownership",
+        "Relation": "Investigates, Produces, Supports, LeavesOpen, Suggests, Contradicts, Revises, Resolves, Steers or Reuses",
+        "Edge": "Directed typed relationship between existing record IDs",
+        "Origin": "WorkshopFixture or LocalArtifact; keeps synthetic material distinct",
+        "Artifact": "Recorded name, byte length, hash, preview and optional parsed firmware report",
+        "Investigation": "Canonical record store with edges and retained disassembly/model/REA receipts",
+        "Attention": "Window reading cursor, available frontier, follow/hold state and reviewed arrivals; not serialized evidence"
+      }
+    },
+    {
+      "module": "evidence",
+      "creator": "Checked ID constructors, scalar-view projection or analyst review",
+      "states": "ID role resolved against the owning case; interpretations remain interpretations",
+      "ui": "Evidence links, endian views and type-hypothesis form",
+      "prevents": "Treating a representation or citation as proof",
+      "types": {
+        "QuestionId": "Nonzero reference that resolves to a record with a question plan",
+        "ObservationId": "Nonzero reference that resolves to completed evidence",
+        "InsightId": "Nonzero reference to a record's human-facing insight",
+        "ByteOrder": "Little or Big: the selected interpretation of observed bytes",
+        "F32Bits": "u32 bits preserving NaN payloads and negative zero through JSON",
+        "ScalarViews": "Optional u8, u16, u32 and f32 views; unavailable widths are None",
+        "TypeHypothesis": "Proposed type, rationale, supporting/counter-evidence IDs and limitations"
+      }
+    },
+    {
+      "module": "coordinates",
+      "creator": "Identity constructors and checked ImageMap methods",
+      "states": "Digest syntax, owner identity, arithmetic and range checks; loaded DTOs are not fresh-byte capabilities",
+      "ui": "Declared address, image offset and original source fragments",
+      "prevents": "Cross-image references and accidental coordinate conversion",
+      "types": {
+        "ImageOffset": "u64 offset within a decoded image",
+        "ArtifactId": "Validated lowercase SHA-256 identity of original carrier bytes",
+        "ImageId": "Validated lowercase SHA-256 identity of a complete decoded image",
+        "ImageSpan": "Nonempty half-open range tied to one ImageId",
+        "ImageMap": "Declared relationship between original artifact, package and decoded image",
+        "Location": "Resolved declared address plus original-file source fragments"
+      }
+    },
+    {
+      "module": "mapping",
+      "creator": "Checked span constructors and source/load mapping methods",
+      "states": "Resolution is Resolved, Ambiguous or Unresolved; invalid arithmetic returns Err separately",
+      "ui": "Source ranges and unresolved/ambiguous address explanations",
+      "prevents": "Inventing a unique mapping or dropping fragmented provenance",
+      "types": {
+        "FileSpan": "Original-file range qualified by ArtifactId",
+        "PackageSpan": "Logical package range qualified by ArtifactId",
+        "FlashSpan": "Flash range qualified by ImageId",
+        "MappedSpan": "Declared memory range qualified by ImageId",
+        "SourceMap": "FWSC marker-removal mapping; one logical range can have several file fragments",
+        "FlashMap": "Flash member location within its owning package",
+        "Resolution": "Generic result with resolved value, all ambiguous candidates or an unresolved reason",
+        "LoadRegion": "One declared image-to-address region",
+        "LoadMap": "Collection of declared regions; resolves the whole requested span"
+      }
+    },
+    {
+      "module": "fwsc",
+      "creator": "Exact-V15 reader and supplied format profile",
+      "states": "Identity, bounds and supported CRC checks; unsupported checks remain unresolved",
+      "ui": "Data view and package/application graph records",
+      "prevents": "Disassembling container bytes as if they were application bytes",
+      "types": {
+        "PackageOffset": "u64 coordinate after removing FWSC markers",
+        "FlashOffset": "u64 coordinate within the flash member",
+        "SourceSpan": "Original file offset and length retained as provenance",
+        "CrcCheck": "Declared and computed checksum values; equality is a scoped check",
+        "PackageHeader": "Parsed package header fields and checksum comparisons",
+        "PackageEntry": "Typed directory entry, logical offsets, lengths and raw checksum result",
+        "DirectoryEntry": "Decoded application-area directory metadata",
+        "Application": "Checked application directory selection, identity and bounded previews",
+        "FirmwareView": "Package, Entry(index) or Application projection into a graph record",
+        "FirmwareReport": "Parsed package and optional application report with unresolved checks",
+        "MatchedV15": "Runtime-only borrowed proof of exact source identity; not deserializable"
+      }
+    },
+    {
+      "module": "decoded_image",
+      "creator": "Freshly checked V15 decoding",
+      "states": "Owns current verified image bytes and map; cannot be deserialized",
+      "ui": "Enables Disassemble only after source verification",
+      "prevents": "Using saved metadata to authorize a fresh tool read",
+      "types": {
+        "DecodedImage": "Runtime capability for the actual decoded bytes"
+      }
+    },
+    {
+      "module": "pi32",
+      "creator": "Validated parser over captured vendor output and selected input bytes",
+      "states": "Instruction spans checked against input; destinations can be internal, external or unresolved",
+      "ui": "Code listing, control-flow graph and instruction inspector",
+      "prevents": "Presenting candidate static flow as observed execution",
+      "types": {
+        "RunId": "Nonzero disassembly identity within a case",
+        "Target": "Direct declared address or unresolved destination text",
+        "Flow": "Instruction transfer classification, separate from mnemonic text",
+        "DecodeKind": "Instruction versus retained undecoded data",
+        "Instruction": "Address, image span, exact bytes, text and candidate transfer semantics",
+        "Gap": "Selected bytes with no accepted decoded instruction",
+        "Coverage": "Complete, Partial or Unavailable byte coverage",
+        "DisassemblyReport": "Scope, map, exact input, wrapper hash, capture, accepted instructions, gaps and issues",
+        "Parsed": "Private intermediate parser output; not a fresh source capability",
+        "BasicBlock": "Conservative instruction interval with an explicit starting address",
+        "Destination": "Internal block, external address, unresolved destination or return",
+        "EdgeKind": "Typed jump, branch, call, return-site or unresolved control-flow relationship",
+        "FlowEdge": "Candidate relationship with source block and destination state",
+        "ControlFlow": "Basic blocks and candidate edges derived from one accepted report"
+      }
+    },
+    {
+      "module": "tool_runner",
+      "creator": "Bounded pi32 adapter process wrapper",
+      "states": "Completed, Failed, Cancelled, TimedOut or OutputLimit; partial output stays diagnostic/limited",
+      "ui": "Tool prerequisites, outcome and full receipt",
+      "prevents": "Equating a successful process with complete analysis",
+      "types": {
+        "ToolConfig": "Selected distribution and installed disassembler executable",
+        "ToolOutcome": "Terminal transport outcome independent of decode coverage",
+        "ToolCapture": "Tool identity/version/flags, raw output, exit status, elapsed time and limitations",
+        "RunnerReport": "Private helper response decoded before constructing the capture",
+        "OwnedDirectory": "Private cleanup guard for this run's temporary directory"
+      }
+    },
+    {
+      "module": "omp",
+      "creator": "Installed isolated OMP bridge and strict protocol decoder",
+      "states": "Correlated ordered events and allowlisted operations; drafts remain provisional",
+      "ui": "Model catalogue, request receipt and inferred explanations",
+      "prevents": "Treating an unchecked model proposal as an executed probe",
+      "types": {
+        "Model": "Discovered provider/model metadata and capabilities",
+        "Catalogue": "Installed SDK/CLI versions, configured default and available models",
+        "Event": "Versioned request-correlated model transport event",
+        "Proposal": "Question, why, method, enables, unknowns, cited observations and requested scope",
+        "Operation": "Disassemble, ReadFixture or Conclude allowlist",
+        "Analysis": "Model explanation, significance, evidence citations and limitations",
+        "AiRun": "Exact context snapshot, ordered events, checked proposal and published record references",
+        "Job": "Runtime channel, cancellation and request identity; never reconstructed as a live job"
+      }
+    },
+    {
+      "module": "rea",
+      "creator": "Installed REA adapter and supported canonical entropy-bundle profile",
+      "states": "Complete canonical evidence or explicit incomplete/unsupported outcome",
+      "ui": "REA original-file evidence and retained ev_ identities",
+      "prevents": "Replacing REA provenance or interpreting entropy as proof of encryption",
+      "types": {
+        "Config": "Installed runtime and package configuration",
+        "Request": "Discovery, bounded original-file entropy request or supported bundle import",
+        "Receipt": "Correlated adapter response retaining original canonical bundle",
+        "ReaRun": "Receipt attached to one investigation record",
+        "Job": "Runtime response channel and cancellation state"
+      }
+    },
+    {
+      "module": "execution",
+      "creator": "Pure checked controller and history audit",
+      "states": "Budget/scope/generation constraints apply to every transition",
+      "ui": "AI cycle controls and ordered execution history",
+      "prevents": "Out-of-scope probes, unlimited loops and stale publication",
+      "types": {
+        "ProbeKey": "Target, operation, offset, length and frozen profile identity for completed-request reuse",
+        "Scope": "Allowed target identity, operation and bounded byte range",
+        "Mode": "Running, Paused, Stopped, Completed or Failed",
+        "Phase": "NeedModel, AwaitingModel, ReadyProbe, AwaitingProbe or Done",
+        "Controller": "Sequential state, budget usage, request counts and status",
+        "Event": "Cycle and question identity plus one typed execution detail",
+        "Detail": "Started, pause/resume/stop, accepted/recorded probe, explanation and terminal accounting",
+        "Audit": "Replay-time execution consistency checker"
+      }
+    },
+    {
+      "module": "engine",
+      "creator": "Application runtime around the pure controller",
+      "states": "One current model/probe worker; generation changes invalidate stale results",
+      "ui": "Live AI cycle and evidence arriving behind a held reader",
+      "prevents": "Restoring executable workers from saved history",
+      "types": {
+        "Target": "Fresh V15 image capability or compiled synthetic teaching bytes",
+        "Settings": "Human-selected question, model, budget, range and objective",
+        "Output": "Private typed disassembly or synthetic-byte worker result",
+        "ProbeJob": "Private worker ID, generation, cancellation flag and receiver",
+        "Engine": "Runtime jobs, completed-probe cache, draft and checked controller"
+      }
+    },
+    {
+      "module": "history",
+      "creator": "Append-only capture and deterministic offline replay",
+      "states": "Versioned event order, hash chain and validated resulting projection",
+      "ui": "Case history, checkpoints and analyst corrections",
+      "prevents": "Silently rewriting findings or pretending imported snapshots have full chronology",
+      "types": {
+        "Document": "Versioned baseline, provenance and ordered events",
+        "Event": "Sequence number, previous commitment, typed payload and current commitment",
+        "Payload": "Commit, JobStarted, JobEnded or Execution event",
+        "Change": "Record/edge/receipt addition, note revision or objective steering",
+        "Role": "Question, action, observation, explanation, hypothesis, open question or analyst decision classification",
+        "ReviewKind": "Steering, Correction or Resolution",
+        "History": "Validated document and reconstructed investigation projection"
+      }
+    },
+    {
+      "module": "memory",
+      "creator": "Deterministic projection from retained branch records",
+      "states": "Bounded records/text with explicit omitted IDs and excerpt markers",
+      "ui": "Branch memory / retained context in Harness Insight",
+      "prevents": "Depending on transient chat or hiding omitted evidence",
+      "types": {
+        "BranchMemory": "Selected branch, projected records/relationships and omissions",
+        "MemoryRecord": "Retained role, rationale, plan, note, evidence/counter-evidence and original review target"
+      }
+    },
+    {
+      "module": "storage",
+      "creator": "Local file inspection",
+      "states": "Bounded source read with recorded metadata and optional fresh image",
+      "ui": "Open artifact and Verify source",
+      "prevents": "Confusing recorded identity with currently available source bytes",
+      "types": {
+        "Inspection": "Artifact metadata plus optional runtime DecodedImage"
+      }
+    },
+    {
+      "module": "export",
+      "creator": "Explicit portable review selection",
+      "states": "Independent byte/text choices; original receipts require both",
+      "ui": "Export portable review",
+      "prevents": "Accidentally exporting full local receipts or treating a review export as a replay case",
+      "types": {
+        "Options": "Byte, analyst-text and original-receipt inclusion choices"
+      }
+    },
+    {
+      "module": "app",
+      "creator": "Native event handlers and worker lifecycle",
+      "states": "Window state and deliberate file commands; unsaved changes checked before replacement",
+      "ui": "Menus, panels and shared selection",
+      "prevents": "Losing edits or publishing into a replacement case",
+      "types": {
+        "FileCommand": "Private requested file action pending prerequisite/unsaved checks",
+        "CodeJob": "Private running disassembly identity, receiver and starting reading state",
+        "DivulgeApp": "Native application state tying records, workers, graph and inspector together"
+      }
+    },
+    {
+      "module": "graph",
+      "creator": "Presentation controls over canonical record IDs",
+      "states": "Bounded layout and scope; positions/pins are presentation state",
+      "ui": "Graph cards, scopes and Navigate menu",
+      "prevents": "Changing evidence relationships by moving a node",
+      "types": {
+        "Layout": "Narrative or Relationships",
+        "Scope": "Private All, Branch or Neighbors view",
+        "Navigation": "Private named camera, selection, pin and movement actions",
+        "GraphView": "ID-keyed positions, pins, scope anchor and camera bounds",
+        "GraphResponse": "Selection or movement intent returned to the application"
+      }
+    },
+    {
+      "module": "insight",
+      "creator": "Terminal inspector widgets",
+      "states": "Record-local reading/editing state; findings remain canonical",
+      "ui": "Harness Insight",
+      "prevents": "Confusing a transient widget state with a saved observation",
+      "types": {
+        "Inspector": "Inspector selection, scalar interpretation and hypothesis form state",
+        "Response": "Selected/created record and note-change intent"
+      }
+    },
+    {
+      "module": "data_view",
+      "creator": "Borrowed projection of existing evidence",
+      "states": "Read-only references valid for the owner's lifetime",
+      "ui": "Data tables and byte views",
+      "prevents": "Copying a presentation projection into a second evidence store",
+      "types": {
+        "ByteView": "Borrowed bytes with source, length and decoding provenance"
+      }
+    },
+    {
+      "module": "code_view",
+      "creator": "Native Code view controls",
+      "states": "Selected run/instruction, scope input and optional actions",
+      "ui": "Instruction listing and control flow",
+      "prevents": "Launching a tool merely by viewing saved instructions",
+      "types": {
+        "Action": "Requested run/cancel/source verification/selection intent",
+        "CodeView": "Code presentation, scope fields, conservative flow and camera"
+      }
+    },
+    {
+      "module": "ai_view",
+      "creator": "Model dialog and request controls",
+      "states": "Discovered catalogue and selected recorded/running request",
+      "ui": "OMP models and next step",
+      "prevents": "Changing the global OMP default or treating drafts as final",
+      "types": {
+        "Action": "Requested AI dialog effect",
+        "AiView": "Model picker, request controls and retained receipts"
+      }
+    },
+    {
+      "module": "engine_view",
+      "creator": "AI cycle configuration and controls",
+      "states": "Start, pause, resume, stop and model-selection intent",
+      "ui": "AI cycle dialog and execution status strip",
+      "prevents": "Embedding unchecked execution inside widget rendering",
+      "types": {
+        "Action": "Typed cycle-control intent",
+        "EngineView": "Question, scope, model and budget form"
+      }
+    },
+    {
+      "module": "rea_view",
+      "creator": "REA operation dialog",
+      "states": "Configured prerequisites, bounded input and retained run selection",
+      "ui": "REA original-file evidence",
+      "prevents": "Hiding adapter availability or incomplete output",
+      "types": {
+        "ReaView": "REA controls, job polling and receipt display"
+      }
+    },
+    {
+      "module": "history_view",
+      "creator": "History and export dialogs",
+      "states": "Read-only checkpoints plus explicit append/review/export actions",
+      "ui": "Case history and review",
+      "prevents": "Editing past records through a replay preview",
+      "types": {
+        "HistoryView": "Checkpoint, review and portable-export form state"
+      }
+    }
+  ]
+}

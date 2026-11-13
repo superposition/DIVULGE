@@ -1,0 +1,207 @@
+{
+  "artifact": null,
+  "disassembly": [],
+  "format": "divulge-review-export",
+  "notice": "Portable review projection; not a replay case or a canonical REA bundle. Evidence IDs name the retained originals, not hashes of this projection. No credential store is read. Analyst text and original receipts require review before sharing.",
+  "objective": "Learn the Rust types behind an investigation, then follow their evidence in the graph.",
+  "options": {
+    "include_analyst_text": true,
+    "include_bytes": true,
+    "include_original_receipts": false
+  },
+  "original_receipts": null,
+  "rea": [],
+  "records": [
+    {
+      "evidence": [],
+      "insight": {
+        "action": "Choose a bounded read of the teaching fixture.",
+        "explanation": "Begin by inspecting the bytes before assigning a type or meaning.",
+        "next_step": "Read the two-byte fixture at file offset zero.",
+        "observation": "No observation has been recorded at this step.",
+        "purpose": "Separate a byte observation from our choice of interpretation.",
+        "question": "What can we establish from these two bytes, and what are we only assuming about their meaning?",
+        "uncertainty": "We have not established that the original author intended an integer, or what the value represents. These are synthetic teaching bytes, not FM-1 evidence."
+      },
+      "interpretation": null,
+      "kind": "Question",
+      "note": "",
+      "question": null,
+      "range": null,
+      "record": 1,
+      "summary": "Separate byte evidence from an assumed meaning.",
+      "title": "What do these bytes mean?"
+    },
+    {
+      "evidence": [],
+      "insight": {
+        "action": "Read exactly two bytes starting at file offset zero.",
+        "explanation": "A bounded read makes the scope of our evidence explicit.",
+        "next_step": "Inspect the resulting byte values.",
+        "observation": "The read result is recorded in the following observation.",
+        "purpose": "Separate a byte observation from our choice of interpretation.",
+        "question": "What can we establish from these two bytes, and what are we only assuming about their meaning?",
+        "uncertainty": "We have not established that the original author intended an integer, or what the value represents. These are synthetic teaching bytes, not FM-1 evidence."
+      },
+      "interpretation": null,
+      "kind": "Probe",
+      "note": "",
+      "question": 1,
+      "range": null,
+      "record": 2,
+      "summary": "Inspect bytes before assigning meaning.",
+      "title": "Read the teaching fixture"
+    },
+    {
+      "evidence": [],
+      "insight": {
+        "action": "Read exactly two bytes starting at file offset zero.",
+        "explanation": "These are byte values. An original data type or field meaning has not been established.",
+        "next_step": "Try an explicitly chosen little-endian u16 interpretation.",
+        "observation": "The fixture contains exactly two bytes: 34 12 (hexadecimal).",
+        "purpose": "Separate a byte observation from our choice of interpretation.",
+        "question": "What can we establish from these two bytes, and what are we only assuming about their meaning?",
+        "uncertainty": "We have not established that the original author intended an integer, or what the value represents. These are synthetic teaching bytes, not FM-1 evidence."
+      },
+      "interpretation": null,
+      "kind": "Observation",
+      "note": "",
+      "question": 1,
+      "range": {
+        "bytes": [
+          52,
+          18
+        ],
+        "length": 2,
+        "offset": 0,
+        "space": "original_file"
+      },
+      "record": 3,
+      "summary": "Observed at file offset 0x0000.",
+      "title": "Two bytes: 34 12"
+    },
+    {
+      "evidence": [
+        3
+      ],
+      "insight": {
+        "action": "Read the teaching fixture at file offset 0; interpret its two bytes as a little-endian u16.",
+        "explanation": "u16::from_le_bytes([0x34, 0x12]) yields 4660 (0x1234). This is a reproducible interpretation of the bytes.",
+        "next_step": "Find a format declaration or a controlled example that assigns meaning to this field.",
+        "observation": "The fixture contains exactly two bytes: 34 12 (hexadecimal).",
+        "purpose": "Separate a byte observation from our choice of interpretation.",
+        "question": "What can we establish from these two bytes, and what are we only assuming about their meaning?",
+        "uncertainty": "We have not established that the original author intended an integer, or what the value represents. These are synthetic teaching bytes, not FM-1 evidence."
+      },
+      "interpretation": null,
+      "kind": "Explanation",
+      "note": "Workshop checkpoint: the u16 view is reproducible; intended meaning is still unknown.",
+      "question": 1,
+      "range": null,
+      "record": 4,
+      "summary": "Little-endian u16; meaning still unknown.",
+      "title": "One interpretation: 4660"
+    },
+    {
+      "evidence": [],
+      "insight": {
+        "action": "Review what the existing observation can and cannot support.",
+        "explanation": "The number could have several roles. The current evidence does not select one.",
+        "next_step": "Find a format declaration or a controlled example that assigns meaning to this field.",
+        "observation": "The fixture contains exactly two bytes: 34 12 (hexadecimal).",
+        "purpose": "Separate a byte observation from our choice of interpretation.",
+        "question": "What does the interpreted number represent?",
+        "uncertainty": "We have not established that the original author intended an integer, or what the value represents. These are synthetic teaching bytes, not FM-1 evidence."
+      },
+      "interpretation": null,
+      "kind": "Unknown",
+      "note": "",
+      "question": null,
+      "range": null,
+      "record": 5,
+      "summary": "A number alone does not explain its role.",
+      "title": "What does 4660 represent?"
+    },
+    {
+      "evidence": [],
+      "insight": {
+        "action": "Propose a discriminating follow-up probe.",
+        "explanation": "A format declaration or a controlled change could distinguish competing interpretations.",
+        "next_step": "Find a format declaration or a controlled example that assigns meaning to this field.",
+        "observation": "The fixture contains exactly two bytes: 34 12 (hexadecimal).",
+        "purpose": "Separate a byte observation from our choice of interpretation.",
+        "question": "What evidence would establish the field's meaning?",
+        "uncertainty": "We have not established that the original author intended an integer, or what the value represents. These are synthetic teaching bytes, not FM-1 evidence."
+      },
+      "interpretation": null,
+      "kind": "Question",
+      "note": "",
+      "question": null,
+      "range": null,
+      "record": 6,
+      "summary": "Choose the next evidence to look for.",
+      "title": "What would establish meaning?"
+    },
+    {
+      "evidence": [
+        3
+      ],
+      "insight": {
+        "action": "Analyst recorded Correction; the original finding remains unchanged",
+        "explanation": "Keep the chosen little-endian representation separate from intended meaning.",
+        "next_step": "Review the cited evidence and the original record together",
+        "observation": "This is an analyst decision, not a new tool observation",
+        "purpose": "Preserve an explicit analyst decision and its scope",
+        "question": "What can we establish from these two bytes, and what are we only assuming about their meaning?",
+        "uncertainty": "No consuming instruction or runtime behavior has been observed."
+      },
+      "interpretation": {
+        "evidence": [
+          3
+        ],
+        "kind": "Correction",
+        "target": 4
+      },
+      "kind": "Analyst review",
+      "note": "",
+      "question": 1,
+      "range": null,
+      "record": 7,
+      "summary": "Keep the chosen little-endian representation separate from intended meaning.",
+      "title": "Correction / record #4"
+    }
+  ],
+  "relationships": [
+    {
+      "from": 1,
+      "relation": "Investigates",
+      "to": 2
+    },
+    {
+      "from": 2,
+      "relation": "Produces",
+      "to": 3
+    },
+    {
+      "from": 3,
+      "relation": "Supports",
+      "to": 4
+    },
+    {
+      "from": 4,
+      "relation": "LeavesOpen",
+      "to": 5
+    },
+    {
+      "from": 5,
+      "relation": "Suggests",
+      "to": 6
+    },
+    {
+      "from": 4,
+      "relation": "Revises",
+      "to": 7
+    }
+  ],
+  "version": 1
+}
