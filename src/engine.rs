@@ -282,11 +282,16 @@ impl Engine {
                 .contains(&json!(id.value()))
         {
             let r = id.resolve(session)?;
+            if context["record_ids"].as_array().unwrap().len() >= 12 {
+                let omitted = context["record_ids"].as_array_mut().unwrap().pop().unwrap();
+                context["evidence"].as_array_mut().unwrap().pop();
+                context["observation_replaced_by_required_result"] = omitted;
+            }
             context["record_ids"]
                 .as_array_mut()
                 .unwrap()
                 .push(json!(id.value()));
-            context["evidence"].as_array_mut().unwrap().push(json!({"id":id,"title":r.title,"observation":r.insight.observation,"uncertainty":r.insight.uncertainty}));
+            context["evidence"].as_array_mut().unwrap().push(json!({"id":id,"title":crate::memory::clip(&r.title,180),"observation":crate::memory::clip(&r.insight.observation,1200),"uncertainty":crate::memory::clip(&r.insight.uncertainty,900)}));
         }
         if serde_json::to_vec(&context).unwrap().len() > 64000 {
             return Err("Execution context exceeds 64 KiB".into());
@@ -440,6 +445,7 @@ impl Engine {
         match c.phase.clone() {
             Phase::NeedModel { .. } => {
                 ensure_capacity(session, history)?;
+                history.capture(session)?;
                 let context = self.snapshot(session)?;
                 self.draft.clear();
                 let job = omp::start(context, self.model.clone(), true, generation);
@@ -1073,5 +1079,99 @@ mod tests {
             );
             History::restore(h.document().clone()).unwrap();
         }
+    }
+    #[test]
+    fn required_probe_observation_survives_a_full_context_budget() {
+        let (mut session, _history, mut engine) = setup();
+        for id in 7..31 {
+            let mut record = session.records[2].clone();
+            record.id = RecordId(id);
+            record.question_id = Some(QuestionId::new(5).unwrap());
+            record.insight.observation = "Synthetic byte observation. ".repeat(100);
+            session.records.push(record);
+        }
+        session.validate().unwrap();
+        let before = omp::context(&session, session.records.len(), RecordId(1)).unwrap();
+        assert_eq!(before["record_ids"].as_array().unwrap().len(), 12);
+        assert!(!before["record_ids"].as_array().unwrap().contains(&json!(7)));
+        engine.controller.as_mut().unwrap().phase = Phase::NeedModel {
+            observation: Some(ObservationId::new(7).unwrap()),
+        };
+        let context = engine.snapshot(&session).unwrap();
+        let ids = context["record_ids"].as_array().unwrap();
+        let evidence = context["evidence"].as_array().unwrap();
+        assert_eq!(ids.len(), 12);
+        assert_eq!(evidence.len(), 12);
+        assert_eq!(ids.last(), Some(&json!(7)));
+        assert_eq!(context["required_observation"], 7);
+        assert_eq!(
+            &context["observation_replaced_by_required_result"],
+            before["record_ids"].as_array().unwrap().last().unwrap()
+        );
+        assert!(ids.iter().zip(evidence).all(|(id, item)| id == &item["id"]));
+        assert!(
+            evidence.last().unwrap()["observation"]
+                .as_str()
+                .unwrap()
+                .contains("[excerpt;")
+        );
+        assert!(serde_json::to_vec(&context).unwrap().len() < 64000);
+    }
+    #[test]
+    fn reader_hold_and_branch_correction_survive_live_probe_progress() {
+        let (mut session, mut history, mut engine) = setup();
+        let mut attention = Attention::all(session.records.len());
+        attention.select(3);
+        inject(
+            &mut engine,
+            &mut history,
+            &session,
+            json!(proposal(ObservationId::new(3).unwrap(), false, false)),
+        );
+        session
+            .append_review(
+                ReviewKind::Correction,
+                RecordId(4),
+                "Keep chosen representation separate from meaning".into(),
+                "No consuming code observed".into(),
+                vec![ObservationId::new(3).unwrap()],
+            )
+            .unwrap();
+        history.capture(&session).unwrap();
+        engine.tick(&mut session, &mut history, 7).unwrap();
+        attention.publish(session.records.len());
+        assert_eq!(attention.selected_index, 3);
+        assert_eq!(attention.reading_count(), 6);
+        assert!(attention.unread() > 0);
+        let observed = finish_probe_paused(&mut engine, &mut history, &mut session);
+        attention.publish(session.records.len());
+        let snapshot = engine.snapshot(&session).unwrap();
+        assert!(
+            snapshot["branch_memory"]
+                .to_string()
+                .contains("Keep chosen representation separate from meaning")
+        );
+        assert_eq!(snapshot["required_observation"], json!(observed.value()));
+        assert!(attention.review_next());
+        assert!(matches!(
+            session.records[attention.selected_index].data,
+            RecordData::Review { .. }
+        ));
+        attention.follow();
+        attention.set_hold(true);
+        engine.resume(&mut history).unwrap();
+        let reading = attention.selected_index;
+        inject(
+            &mut engine,
+            &mut history,
+            &session,
+            json!(proposal(observed, true, true)),
+        );
+        engine.tick(&mut session, &mut history, 7).unwrap();
+        assert!(!attention.publish(session.records.len()));
+        assert_eq!(attention.selected_index, reading);
+        assert!(attention.unread() > 0);
+        assert_eq!(engine.controller.as_ref().unwrap().mode, Mode::Completed);
+        History::restore(history.document().clone()).unwrap();
     }
 }

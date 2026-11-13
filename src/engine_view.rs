@@ -54,6 +54,7 @@ impl EngineView {
         let mut action = Action::None;
         if let Some(c) = &engine.controller {
             ui.horizontal_wrapped(|ui| {
+                ui.set_min_height(24.0);
                 ui.label(
                     RichText::new(format!("{:?} / {}/{} probes", c.mode, c.used, c.budget))
                         .monospace()
@@ -70,7 +71,8 @@ impl EngineView {
                     action = Action::Stop;
                 }
             });
-            ui.label(&c.status);
+            ui.add(egui::Label::new(&c.status).truncate())
+                .on_hover_text(&c.status);
         }
         action
     }

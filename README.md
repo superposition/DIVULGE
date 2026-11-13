@@ -12,7 +12,7 @@ The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 archite
 - Selectable narrative graph and a small, deterministic force-directed relationship layout.
 - Terminal-style Harness Insight: file offsets, selectable hex/ASCII bytes, endian-aware scalar views, artifact identity, evidence links, and the question/explanation transcript. Unmapped CPU addresses remain explicitly unresolved.
 - Saved question plans explain why a question matters, how to investigate it, what its answer enables, and what evidence is sufficient. **Focus question** or a double-click zooms to the question and its next probe; **Fit all** restores the overview.
-- Independent reading position and replay frontier, with Review next and Follow latest.
+- Independent execution frontier and reading checkpoint, with new-record counts, Review next, Follow latest and Presenter hold during live work. [Durable branch memory](docs/harness-memory.md) retains relevant evidence, hypotheses, counter-evidence and analyst decisions for OMP.
 - Local artifact hashing, bounded byte previews, and comparison with the configured V15 identity.
 - Exact-V15 FWSC decoding: eight package entries, header and directory CRCs, raw member CRC comparisons, SFC/JLFS application decoding, and source mappings back to the original file.
 - A compact **Data** view shares selection with **Graph**. Inspect field locations and Rust types, sizes, hashes, raw/decoded bytes, flash offsets, and the application's declared address. **Focus result** frames a record and its immediate evidence relationships.
@@ -50,7 +50,7 @@ New saves use a version 2 event-ledger envelope and schema 8 records. Version 1 
 
 Requires Bun and a separately installed OMP SDK **18.14.2**, the version whose isolation contract is checked here. The CLI may have another version; both are displayed. The bridge discovers the SDK under `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent`; `DIVULGE_OMP_SDK` overrides this directory and `DIVULGE_BUN` overrides the runtime executable. It does not install or upgrade OMP. Auth and the model catalogue come from OMP's existing configuration.
 
-Choose **Model > OMP models and next step > Connect / refresh models**. Keep the discovered default or filter/select another tool-capable model. **Propose next step** sends a bounded snapshot (objective, selected question/note, eight evidence summaries and at most two 80-row excerpts) to that model's provider. Expand the snapshot to review it first. An offline local server must be started separately or another model selected.
+Choose **Model > OMP models and next step > Connect / refresh models**. Keep the discovered default or filter/select another tool-capable model. **Propose next step** sends a bounded snapshot (objective, durable branch memory, up to twelve evidence summaries and at most two 80-row excerpts) to that model's provider. Expand the snapshot to review it first. An offline local server must be started separately or another model selected.
 
 The session exposes one read-only `read_evidence` tool with no filesystem access. MCP, LSP, IRC, extensions, rules, skills and context discovery are disabled. The active tool list is checked before any generation. Rust checks citations, integer offsets, alignment and bounds before recording a proposal. **Stage span in Code** fills the selection; it does not execute it. A new disassembly still requires freshly verified source bytes.
 

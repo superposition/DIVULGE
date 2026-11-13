@@ -264,19 +264,51 @@ pub fn context(
     } else {
         return Err("Open a decoded V15 application or the synthetic workshop fixture".into());
     };
-    let records: Vec<_> = session
+    let memory = crate::memory::branch(session, visible, selected)?;
+    let mut records: Vec<_> = memory
+        .records
+        .iter()
+        .filter_map(|m| session.record(m.id))
+        .filter(|r| session.is_evidence(r))
+        .take(12)
+        .collect();
+    // Fill unused capacity with recent observations, without displacing branch citations.
+    for r in session
         .records
         .iter()
         .take(visible)
-        .filter(|r| session.is_evidence(r))
         .rev()
-        .take(8)
-        .collect();
-    let evidence:Vec<_>=records.iter().map(|r|json!({"id":r.id.0,"title":r.title,"observation":r.insight.observation,"uncertainty":r.insight.uncertainty,"rea":session.rea_runs.iter().find(|run|run.record==r.id).and_then(|run|run.receipt.bundle().ok().flatten()).map(|bundle|bundle["records"].as_array().unwrap().iter().map(|e|json!({"evidence_id":e["evidence_id"],"provider":e["provider"],"authority":e["authority"],"file_window":e["normalized_result"]["window"],"file_entropy":e["normalized_result"]["file_entropy"],"limitations":e["limitations"]})).collect::<Vec<_>>())})).collect();
+        .filter(|r| session.is_evidence(r))
+    {
+        if records.len() == 12 {
+            break;
+        }
+        if !records.iter().any(|candidate| candidate.id == r.id) {
+            records.push(r);
+        }
+    }
+    let evidence:Vec<_>=records.iter().map(|r|json!({"id":r.id.0,"title":crate::memory::clip(&r.title,180),"observation":crate::memory::clip(&r.insight.observation,1200),"uncertainty":crate::memory::clip(&r.insight.uncertainty,900),"rea":session.rea_runs.iter().find(|run|run.record==r.id).and_then(|run|run.receipt.bundle().ok().flatten()).map(|bundle|bundle["records"].as_array().unwrap().iter().take(2).map(|e|json!({"evidence_id":e["evidence_id"],"provider":e["provider"],"authority":e["authority"],"file_window":e["normalized_result"]["window"],"file_entropy":e["normalized_result"]["file_entropy"],"limitations":crate::memory::clip(&e["limitations"].to_string(),900)})).collect::<Vec<_>>())})).collect();
     let runs:Vec<_>=records.iter().filter_map(|r|if let RecordData::Disassembly(id)=r.data {session.disassemblies.iter().find(|run|run.id==id)}else{None}).take(2).map(|run|json!({"run":run.id.0,"scope":run.scope,"coverage":run.coverage,"instructions":run.instructions.iter().take(80).map(|i|json!({"address":i.address.0,"offset":i.span.offset.0,"width":i.width(),"text":i.text,"flow":i.flow})).collect::<Vec<_>>()})).collect();
     let attention=session.record(selected).map(|r|json!({"title":r.title,"question":r.insight.question,"analyst_note":r.note.chars().take(2000).collect::<String>()}));
-    let reviews:Vec<_>=session.records.iter().take(visible).filter(|r|matches!(r.data,RecordData::Review{..}|RecordData::TypeHypothesis(_))).rev().take(8).map(|r|json!({"id":r.id,"data":r.data,"explanation":r.insight.explanation,"limitations":r.insight.uncertainty})).collect();
-    let value = json!({"objective":session.objective,"selected_record":selected.0,"attention":attention,"record_ids":records.iter().map(|r|r.id.0).collect::<Vec<_>>(),"evidence":evidence,"disassembly":runs,"image_length":image_length,"mapped_base":mapped_base,"image_sha256":image_sha256,"source":source,"allowed_operations":operations,"analyst_reviews":reviews,"limitations":"Static bounded evidence only. No runtime behavior or recovered function purpose established."});
+    let mut value = json!({"objective":session.objective,"selected_record":selected.0,"attention":attention,"record_ids":records.iter().map(|r|r.id.0).collect::<Vec<_>>(),"evidence":evidence,"disassembly":runs,"image_length":image_length,"mapped_base":mapped_base,"image_sha256":image_sha256,"source":source,"allowed_operations":operations,"branch_memory":memory,"original_artifact":session.artifact.as_ref().map(|a|json!({"sha256":a.sha256,"length":a.length})),"limitations":"Static bounded evidence only. No runtime behavior or recovered function purpose established. Excerpts and omitted memory are marked; only record_ids are supplied observation citations."});
+    // Keep durable context ahead of optional instruction excerpts when approaching the transport cap.
+    while serde_json::to_vec(&value).unwrap().len() > 60_000 {
+        let Some(run) = value["disassembly"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|run| {
+                run["instructions"]
+                    .as_array()
+                    .is_some_and(|a| !a.is_empty())
+            })
+        else {
+            break;
+        };
+        let instructions = run["instructions"].as_array_mut().unwrap();
+        instructions.truncate(instructions.len() / 2);
+        run["excerpt_limited_for_context_budget"] = json!(true);
+    }
     if serde_json::to_vec(&value).unwrap().len() > 64000 {
         return Err("Evidence snapshot exceeds 64 KiB".into());
     }

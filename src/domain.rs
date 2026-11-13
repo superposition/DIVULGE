@@ -811,6 +811,9 @@ pub struct Attention {
     pub visible_count: usize,
     pub selected_index: usize,
     pub following: bool,
+    pub held: bool,
+    reading_count: usize,
+    reviewed: HashSet<usize>,
 }
 
 impl Attention {
@@ -819,26 +822,57 @@ impl Attention {
             visible_count: count,
             selected_index: count.saturating_sub(1),
             following: true,
+            held: false,
+            reading_count: count,
+            reviewed: (0..count).collect(),
         }
     }
     pub fn select(&mut self, index: usize) {
         if index < self.visible_count {
             self.selected_index = index;
             self.following = false;
+            self.reviewed.insert(index);
+            self.reading_count = self.visible_count;
         }
     }
     pub fn advance(&mut self, total: usize) {
-        self.visible_count = (self.visible_count + 1).min(total);
-        if self.following {
-            self.selected_index = self.visible_count.saturating_sub(1);
+        self.publish((self.visible_count + 1).min(total));
+    }
+    /// Arrival changes availability; only explicit following may move the reader.
+    pub fn publish(&mut self, count: usize) -> bool {
+        let previous = self.selected_index;
+        self.visible_count = count;
+        self.reviewed.retain(|index| *index < count);
+        if self.following && !self.held {
+            self.selected_index = count.saturating_sub(1);
+            self.reading_count = count;
+            self.reviewed.extend(0..count);
+        }
+        self.selected_index != previous
+    }
+    pub fn reading_count(&self) -> usize {
+        self.reading_count.min(self.visible_count)
+    }
+    pub fn set_hold(&mut self, held: bool) {
+        self.held = held;
+    }
+    pub fn review_next(&mut self) -> bool {
+        if let Some(index) = (0..self.visible_count).find(|index| !self.reviewed.contains(index)) {
+            self.select(index);
+            true
+        } else {
+            false
         }
     }
     pub fn follow(&mut self) {
         self.following = true;
+        self.held = false;
         self.selected_index = self.visible_count.saturating_sub(1);
+        self.reading_count = self.visible_count;
+        self.reviewed.extend(0..self.visible_count);
     }
     pub fn unread(&self) -> usize {
-        self.visible_count.saturating_sub(self.selected_index + 1)
+        self.visible_count.saturating_sub(self.reviewed.len())
     }
 }
 
@@ -866,10 +900,35 @@ mod tests {
         attention.select(0);
         attention.advance(6);
         assert_eq!(attention.selected_index, 0);
-        assert_eq!(attention.unread(), 3);
+        assert_eq!(attention.unread(), 1);
         attention.follow();
         attention.advance(6);
         assert_eq!(attention.selected_index, 4);
+    }
+    #[test]
+    fn live_arrival_hold_and_review_keep_a_stable_reading_frontier() {
+        let mut attention = Attention::all(6);
+        attention.select(2);
+        attention.publish(9);
+        assert_eq!(attention.selected_index, 2);
+        assert_eq!(attention.reading_count(), 6);
+        assert_eq!(attention.unread(), 3);
+        attention.review_next();
+        assert_eq!(attention.selected_index, 6);
+        assert_eq!(attention.unread(), 2);
+        attention.select(1); // Revisiting old work must not reset the unread count.
+        assert_eq!(attention.unread(), 2);
+        attention.follow();
+        assert_eq!(attention.unread(), 0);
+        attention.set_hold(true);
+        assert!(!attention.publish(12));
+        assert_eq!(attention.selected_index, 8);
+        assert_eq!(attention.reading_count(), 9);
+        assert_eq!(attention.unread(), 3);
+        attention.follow();
+        assert!(!attention.held);
+        assert!(attention.publish(13));
+        assert_eq!(attention.selected_index, 12);
     }
 
     #[test]

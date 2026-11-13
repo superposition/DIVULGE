@@ -174,7 +174,7 @@ impl AiView {
         let mut open = self.open;
         egui::Window::new("OMP / Next investigation step").open(&mut open).default_width(620.0).default_height(600.0).resizable(true).show(ctx,|ui|{
             ui.label(RichText::new("Ask a question. Read the evidence. Propose a bounded probe.").color(ACCENT));
-            ui.label("OMP receives the objective, selected question/note, up to 8 evidence summaries and 2 instruction excerpts. The selected provider processes this snapshot. Credentials stay with OMP.");
+            ui.label("OMP receives durable branch context, up to 12 evidence summaries and 2 instruction excerpts. Corrections, counter-evidence and omitted context are identified. The selected provider processes this snapshot. Credentials stay with OMP.");
             let running=self.job.is_some();
             if ui.add_enabled(!running&&!busy,egui::Button::new("Connect / refresh models")).clicked(){self.job=Some(omp::start(serde_json::Value::Null,String::new(),false,generation));self.status="Discovering installed OMP models...".into();}
             if let Some(c)=&self.catalogue {

@@ -281,15 +281,48 @@ impl Inspector {
                 }
                 transcript(ui, "! unresolved", &record.insight.uncertainty, AMBER);
                 transcript(ui, "> next probe", &record.insight.next_step, ACCENT);
+                ui.collapsing(mono("Branch memory / retained context", ACCENT), |ui| {
+                    match divulge::memory::branch(session,visible_count,record.id) {
+                        Ok(memory) => {
+                            ui.label(mono("Questions, evidence, interpretations and decisions come from saved records, not transient chat.",DIM));
+                            for item in &memory.records {
+                                if let Some(index)=session.records.iter().position(|r|r.id==item.id)
+                                    && ui.link(mono(format!("[{:04}] {} / {}",item.id.0,item.role,item.title),ACCENT)).clicked()
+                                { response.selected_record=Some(index); }
+                                if !item.counter_evidence.is_empty() { ui.label(mono(format!("Counter-evidence: {:?}",item.counter_evidence.iter().map(|id|id.value()).collect::<Vec<_>>()),AMBER)); }
+                            }
+                            ui.label(mono(format!("{} records omitted by the context budget; {} records have marked text excerpts",memory.omitted_records.len(),memory.truncated_text.len()),DIM));
+                        }
+                        Err(error) => { ui.label(mono(error,AMBER)); }
+                    }
+                });
+                if matches!(record.data,RecordData::Probe{..}) {
+                    for edge in session.edges.iter().filter(|e|e.to==record.id && e.relation==divulge::domain::Relation::Investigates) {
+                        if let Some(run)=session.ai_runs.iter().find(|run|run.record==edge.from) {
+                            ui.collapsing(mono("Probe request / model events",DIM), |ui| {
+                                ui.label(mono(format!("{} / {} / {} transport events",run.id,run.outcome,run.events.len()),OUTPUT));
+                                if let Some(index)=session.records.iter().position(|r|r.id==run.record)
+                                    && ui.link(mono("Open original proposal and full receipt",ACCENT)).clicked() { response.selected_record=Some(index); }
+                                for event in run.events.iter().filter(|event|!matches!(event.kind.as_str(),"draft"|"proposal")) {
+                                    ui.label(mono(format!("{} / {}",event.seq,event.kind),DIM));
+                                }
+                                ui.label(mono("Draft fragments remain inside the original receipt; they are not graph insights.",DIM));
+                            });
+                        }
+                    }
+                }
                 if let Some(run) = session.ai_runs.iter().find(|run| run.record == record.id) {
                     ui.label(mono("@ OMP / proposal receipt", ACCENT));
                     if !run.diagnostic.is_empty() {
                         ui.label(mono(&run.diagnostic, AMBER));
                     }
                     ui.label(mono(
-                        format!("{} / {} / probe not executed", run.id, run.outcome),
+                        format!("{} / {} / model proposal receipt", run.id, run.outcome),
                         DIM,
                     ));
+                    let actions:Vec<_>=session.edges.iter().filter(|e|e.from==record.id && e.relation==divulge::domain::Relation::Investigates).filter_map(|edge|session.records.iter().take(visible_count).position(|r|r.id==edge.to && matches!(r.data,RecordData::Probe{..}))).collect();
+                    if actions.is_empty() { ui.label(mono("No executed probe is linked at this reading checkpoint.",DIM)); }
+                    for index in actions { if ui.link(mono(format!("Checked probe #{:04} / {}",session.records[index].id.0,session.records[index].summary),ACCENT)).clicked() { response.selected_record=Some(index); } }
                     if let Some(proposal) = &run.proposal {
                         for id in &proposal.evidence {
                             if let Some(index) = session.records.iter().position(|r| r.id == id.record())

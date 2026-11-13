@@ -11,6 +11,7 @@ mod firmware_records;
 pub mod fwsc;
 pub mod history;
 pub mod mapping;
+pub mod memory;
 pub mod omp;
 pub mod pi32;
 pub mod rea;

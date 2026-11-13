@@ -416,11 +416,7 @@ impl DivulgeApp {
     }
 
     fn restart_replay(&mut self) {
-        self.attention = Attention {
-            visible_count: 1,
-            selected_index: 0,
-            following: true,
-        };
+        self.attention = Attention::all(1);
         self.next_tick = Instant::now() + Duration::from_millis(1600);
         self.playing = true;
         self.status = "Replaying saved records. No model or tool calls.".into();
@@ -653,15 +649,15 @@ impl DivulgeApp {
                     ui.close();
                 }
                 if ui.button("Follow latest record").clicked() {
-                    self.attention.follow();
+                    self.follow_latest();
                     ui.close();
                 }
                 if ui.button("Review next record").clicked() {
-                    self.attention.select(
-                        (self.attention.selected_index + 1).min(self.attention.visible_count - 1),
-                    );
+                    self.review_next();
                     ui.close();
                 }
+                ui.checkbox(&mut self.attention.held, "Presenter hold")
+                    .on_hover_text("Keep the reading selection and text fixed while execution continues. Follow latest releases the hold.");
             });
             ui.menu_button("Analysis", |ui| {
                 if ui.button("Identify local artifact...").clicked() {
@@ -906,6 +902,11 @@ impl DivulgeApp {
     }
 
     fn insight(&mut self, ui: &mut egui::Ui) {
+        if ui.rect_contains_pointer(ui.max_rect())
+            && ui.input(|i| i.pointer.any_pressed() || i.smooth_scroll_delta != egui::Vec2::ZERO)
+        {
+            self.attention.following = false;
+        }
         if (self.show_code || matches!(self.selected().data, RecordData::Disassembly(_)))
             && let Some(id) = self
                 .code
@@ -932,7 +933,7 @@ impl DivulgeApp {
             ui,
             &mut self.session,
             self.attention.selected_index,
-            self.attention.visible_count,
+            self.attention.reading_count(),
             self.show_types,
         );
         if let Some(index) = response.selected_record {
@@ -1130,8 +1131,28 @@ impl DivulgeApp {
         ctx.request_repaint();
     }
     fn refresh_execution_graph(&mut self) {
-        self.attention.visible_count = self.session.records.len();
         self.graph.append_records(&self.session);
+        if self.attention.publish(self.session.records.len()) {
+            self.focus_attention();
+        }
+    }
+    fn focus_attention(&mut self) {
+        self.show_code = false;
+        self.show_data = false;
+        self.graph.focus_result(
+            &self.session,
+            self.attention.selected_index,
+            self.attention.visible_count,
+        );
+    }
+    fn follow_latest(&mut self) {
+        self.attention.follow();
+        self.focus_attention();
+    }
+    fn review_next(&mut self) {
+        if self.attention.review_next() {
+            self.focus_attention();
+        }
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
         let selected = self.selected().id;
@@ -1265,8 +1286,7 @@ impl DivulgeApp {
 impl eframe::App for DivulgeApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.engine.controller.is_some() {
-            // Capture an explicit note/review before recording dependent execution events.
-            self.capture_history();
+            // Runtime capture occurs at meaningful request/result boundaries, not each keystroke.
             match self
                 .engine
                 .tick(&mut self.session, &mut self.history, self.generation)
@@ -1289,10 +1309,7 @@ impl eframe::App for DivulgeApp {
         if self.rea.poll(&mut self.session, self.generation) {
             self.dirty = true;
             self.history_dirty = true;
-            self.attention.visible_count = self.session.records.len();
-            let bounds = self.graph.bounds;
-            self.graph.reset(&self.session);
-            self.graph.bounds = bounds;
+            self.refresh_execution_graph();
         }
         if self.rea.job.is_some() {
             ctx.request_repaint_after(Duration::from_millis(50));
@@ -1300,10 +1317,7 @@ impl eframe::App for DivulgeApp {
         if self.ai.poll(&mut self.session, self.generation) {
             self.dirty = true;
             self.history_dirty = true;
-            self.attention.visible_count = self.session.records.len();
-            let reading_bounds = self.graph.bounds;
-            self.graph.reset(&self.session);
-            self.graph.bounds = reading_bounds;
+            self.refresh_execution_graph();
         }
         if self.ai.job.is_some() {
             ctx.request_repaint_after(Duration::from_millis(50));
@@ -1352,6 +1366,7 @@ impl eframe::App for DivulgeApp {
                         match result {
                             Ok(report) => {
                                 let focus = self.show_code
+                                    && !self.attention.held
                                     && job.reading
                                         == (
                                             self.selected().id,
@@ -1362,12 +1377,12 @@ impl eframe::App for DivulgeApp {
                                 let outcome = report.capture.outcome;
                                 match self.session.append_disassembly(report) {
                                     Ok(index) => {
-                                        self.attention.visible_count = self.session.records.len();
-                                        self.graph.reset(&self.session);
+                                        self.refresh_execution_graph();
                                         self.dirty = true;
                                         self.history_dirty = true;
                                         if focus {
                                             self.attention.select(index);
+                                            self.show_code = true;
                                             self.code.select_run(
                                                 self.session.disassemblies.last().unwrap(),
                                             );
@@ -1554,7 +1569,7 @@ impl eframe::App for DivulgeApp {
                     ));
                     if self.attention.unread() > 0 {
                         ui.label(
-                            RichText::new(format!("{} ahead", self.attention.unread()))
+                            RichText::new(format!("{} new", self.attention.unread()))
                                 .color(ACCENT),
                         );
                     }
@@ -1563,7 +1578,7 @@ impl eframe::App for DivulgeApp {
                             .selectable_label(self.attention.following, "Follow latest")
                             .clicked()
                         {
-                            self.attention.follow();
+                            self.follow_latest();
                         }
                         if ui
                             .add_enabled(
@@ -1572,8 +1587,10 @@ impl eframe::App for DivulgeApp {
                             )
                             .clicked()
                         {
-                            self.attention.select(self.attention.selected_index + 1);
+                            self.review_next();
                         }
+                        ui.checkbox(&mut self.attention.held, "Presenter hold")
+                            .on_hover_text("Hold this reading view while AI continues. Follow latest releases the hold.");
                         if self.dirty {
                             ui.label(RichText::new("Unsaved").small().color(MUTED));
                         }

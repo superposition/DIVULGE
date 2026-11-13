@@ -17,6 +17,7 @@ mod tests {
         let mut graph = GraphView::default();
         graph.reset(&session);
         graph.positions[2] = Pos2::new(77.0, 81.0); // Analyst-arranged node.
+        graph.bounds = graph.bounds.translate(Vec2::new(180.0, -90.0)); // Panned reading camera.
         let before = graph.positions.clone();
         let bounds = graph.bounds;
         for _ in 0..5 {

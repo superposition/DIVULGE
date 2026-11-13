@@ -53,7 +53,7 @@ Protocol v1 uses request IDs and monotonic event sequence numbers for ready, dra
 
 Rust owns execution. The cycle is question -> proposed probe -> validated request -> actual observation -> evidence-linked explanation -> follow-up. Expose only explicit workbench operations. The default is 12 probes per question, sequential, with reuse of identical completed evidence requests. Pause prevents new probes; Stop cancels current work. Correlate every response with session and run identity so stale results cannot affect a different investigation.
 
-Harness memory includes objective, target identity, established observations, supported interpretations, hypotheses, decisions, unresolved questions, and branch context. Streaming drafts must remain visibly provisional until a validated insight is published.
+Harness memory projects objective, target identity, observations, interpretations, hypotheses/counter-evidence, decisions and open questions from the durable branch records. Excerpts and omissions are explicit. The attention cursor retains its own reading checkpoint, new-record acknowledgements and presenter hold independently of execution. See [harness memory](harness-memory.md). Streaming drafts remain provisional until a validated insight is published.
 
 ## FM-1 V15 and pi32v2
 
@@ -71,7 +71,7 @@ Custom FM-1 firmware source and SDK examples are reference material, not recover
 
 ## Foundation limits
 
-The checked domain distinguishes typed evidence references, parsed fields, scalar views and type hypotheses. The versioned event ledger retains immutable findings, job lifecycles, note revisions, steering and scoped analyst resolutions, and reconstructs checkpoints offline; see [history](history.md). The bounded executor is implemented; expanded harness memory and the PDF workshop remain tracked work. REA contributes canonical entropy evidence through its own read-only provider. OMP proposes one step from a bounded snapshot; it cannot launch an analysis tool. Both model requests and vendor disassembly support cancellation. Menus for unimplemented operations explain their prerequisites and do not fabricate results.
+The checked domain distinguishes typed evidence references, parsed fields, scalar views and type hypotheses. The versioned event ledger retains immutable findings, job lifecycles, note revisions, steering and scoped analyst resolutions, and reconstructs checkpoints offline; see [history](history.md). The bounded executor is implemented; graph navigation and the PDF workshop remain tracked work. REA contributes canonical entropy evidence through its own read-only provider. OMP proposes one step from a bounded snapshot; it cannot launch an analysis tool. Both model requests and vendor disassembly support cancellation. Menus for unimplemented operations explain their prerequisites and do not fabricate results.
 
 ## REA evidence boundary
 
