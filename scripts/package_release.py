@@ -60,6 +60,8 @@ def main():
                               "--filter-platform", "x86_64-pc-windows-msvc"], text=True))
     package = next(item for item in metadata["packages"] if item["name"] == "divulge" and item["source"] is None)
     version = package["version"]
+    fallback_notices = {item["crate"]: item for item in json.loads(
+        (ROOT / "third-party/notice-sources.json").read_text(encoding="utf-8"))}
     name = "DIVULGE-{}-windows-x86_64".format(version)
     destination = ROOT / "output/release"
     destination.mkdir(parents=True, exist_ok=True)
@@ -93,6 +95,20 @@ def main():
                 notice.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(item, notice)
                 files.append(notice.relative_to(staging).as_posix())
+            if not files:
+                fallback = fallback_notices.get(dependency["name"] + "-" + dependency["version"])
+                if not fallback:
+                    raise SystemExit("No dependency notices for " + dependency["name"])
+                vcs = json.loads((directory / ".cargo_vcs_info.json").read_text(encoding="utf-8"))
+                if vcs["git"]["sha1"] != fallback["upstream_commit"]:
+                    raise SystemExit("Notice revision does not match the packaged crate")
+                for item in fallback["files"]:
+                    source = (ROOT / item["path"]).resolve()
+                    if not source.is_relative_to((ROOT / "third-party/notices").resolve()):
+                        raise SystemExit("Notice path is outside the reviewed snapshot")
+                    if sha(source.read_bytes()) != item["sha256"]:
+                        raise SystemExit("Dependency notice hash mismatch")
+                    files.append(item["path"])
             licenses.append({"name": dependency["name"], "version": dependency["version"],
                              "license": dependency["license"], "repository": dependency["repository"],
                              "notice_files": files})

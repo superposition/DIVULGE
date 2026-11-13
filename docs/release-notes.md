@@ -23,6 +23,6 @@ Use a clean checkout, Rust with the Windows MSVC linker/SDK, and Python 3.11+ wi
 & target/pdf-env/Scripts/python.exe scripts/package_release.py
 ```
 
-The recipe rebuilds all release crates with project/home source paths remapped, rejects private source paths in the executable, builds and structurally checks the workbook, collects dependency notices, and packages only committed source plus the executable, workbook and hashes. `release.json` identifies the exact commit, compiler and artifact digests. Build output and local cases stay outside the tracked source.
+The recipe rebuilds all release crates with project/home source paths remapped, rejects private source paths in the executable, builds and structurally checks the workbook, collects dependency notices, and packages only committed source plus the executable, workbook and hashes. Missing crate-level notices use checked snapshots from the exact upstream revision recorded by Cargo; an absent notice or changed digest stops packaging. `release.json` identifies the exact commit, compiler and artifact digests. Build output and local cases stay outside the tracked source.
 
 Native/rehearsal evidence is maintained in [native validation](native-validation.md) and the workshop documents. Final artifact verification and publication are recorded with the release rather than inferred from successful compilation alone.
