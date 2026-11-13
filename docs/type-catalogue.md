@@ -2,7 +2,7 @@
 
 Generated from maintained descriptions in workshop/type-catalogue.json and checked against every top-level declaration in src, including macro-generated IDs/spans. Run python scripts/check_catalogue.py --write after intentional updates.
 
-124 implemented named types. This index includes private runtime/presentation helpers. It does not claim that a host Rust type was recovered from target firmware. See [the 20-minute route](workshop.md) for the beginner subset and [Rust forms](rust-forms.md) for primitives, collections, borrowing and library types.
+127 implemented named types. This index includes private runtime/presentation helpers. It does not claim that a host Rust type was recovered from target firmware. See [the 20-minute route](workshop.md) for the beginner subset and [Rust forms](rust-forms.md) for primitives, collections, borrowing and library types.
 
 ## domain
 
@@ -253,6 +253,19 @@ Generated from maintained descriptions in workshop/type-catalogue.json and check
 | --- | --- | --- | --- | --- |
 | [HistoryView](../src/history_view.rs#L8): Checkpoint, review and portable-export form state | History and export dialogs | Read-only checkpoints plus explicit append/review/export actions | Case history and review | Editing past records through a replay preview |
 
+## byte_matrix
+
+| Type and meaning | Created by | Valid states / boundary | Find it in the app | Mistake made harder |
+| --- | --- | --- | --- | --- |
+| [ByteWindow](../src/byte_matrix.rs#L6): One original-source span with 256 exact counts, entropy and a bounded preview | Bounded summary of the same source read used for artifact hashing | At most 64 contiguous regions; exact counts, lengths and offsets; empty input has no rows | 3D matrix region/byte inspector | Confusing a preview with a whole file or a byte distribution with recovered behavior |
+| [ByteMatrix](../src/byte_matrix.rs#L15): Whole input-span partition used only for statistical presentation | Bounded summary of the same source read used for artifact hashing | At most 64 contiguous regions; exact counts, lengths and offsets; empty input has no rows | 3D matrix region/byte inspector | Confusing a preview with a whole file or a byte distribution with recovered behavior |
+
+## matrix_view
+
+| Type and meaning | Created by | Valid states / boundary | Find it in the app | Mistake made harder |
+| --- | --- | --- | --- | --- |
+| [MatrixView](../src/matrix_view.rs#L6): Presentation camera and selection over exact byte statistics | Native egui source-matrix controls | Bounded camera, region and byte selection; no evidence or tool execution | 3D matrix projection, camera sliders and exact range inspector | Turning camera motion or point selection into a new evidence claim |
+
 ## Implemented versus future work
 
-All names above are implemented in this revision. More REA operations, verified non-Windows desktop builds, general firmware format support, recovered runtime behavior and persistent graph positions are not supplied by these types. No planned architecture is listed as a working capability.
+All names above are implemented in this revision. More REA operations, broader macOS live-tool validation, Linux desktop qualification, general firmware format support, recovered runtime behavior and persistent graph positions are not supplied by these types. No planned architecture is listed as a working capability.

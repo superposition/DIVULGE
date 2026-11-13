@@ -17,6 +17,7 @@ pub struct Inspection {
     pub path: std::path::PathBuf,
     pub artifact: Artifact,
     pub image: Option<crate::decoded_image::DecodedImage>,
+    pub matrix: crate::byte_matrix::ByteMatrix,
 }
 
 pub fn inspect_with_image(path: &Path) -> Result<Inspection, String> {
@@ -56,6 +57,7 @@ pub fn inspect_with_image(path: &Path) -> Result<Inspection, String> {
         path: path.to_path_buf(),
         artifact,
         image,
+        matrix: crate::byte_matrix::ByteMatrix::from_bytes(&bytes, 0)?,
     })
 }
 
@@ -191,6 +193,34 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn whole_file_matrix_uses_the_hashed_read_beyond_the_saved_preview() {
+        let path = std::env::temp_dir().join(format!(
+            "divulge-matrix-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let bytes: Vec<_> = (0..64).flat_map(|_| 0..=255u8).collect();
+        fs::write(&path, &bytes).unwrap();
+        let inspection = inspect_with_image(&path).unwrap();
+        fs::remove_file(path).unwrap();
+        assert_eq!(inspection.artifact.preview.len(), 256);
+        assert_eq!(inspection.matrix.length, bytes.len());
+        assert_eq!(inspection.artifact.sha256, crate::fwsc::digest(&bytes));
+        assert_eq!(
+            inspection
+                .matrix
+                .windows
+                .iter()
+                .map(|row| row.counts.iter().sum::<u32>() as usize)
+                .sum::<usize>(),
+            bytes.len()
+        );
+    }
 
     #[test]
     fn save_roundtrip_and_actual_file_hash() {

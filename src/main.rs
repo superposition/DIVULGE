@@ -8,6 +8,7 @@ mod engine_view;
 mod graph;
 mod history_view;
 mod insight;
+mod matrix_view;
 mod rea_view;
 
 fn main() -> eframe::Result {

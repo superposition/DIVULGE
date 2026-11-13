@@ -33,7 +33,7 @@ def render():
             values = ["[{}]({}): {}".format(name,source,meaning),group["creator"],group["states"],group["ui"],group["prevents"]]
             lines.append("| " + " | ".join(v.replace("|","\\|").replace("\n"," ") for v in values) + " |")
         lines.append("")
-    lines.extend(["## Implemented versus future work", "", "All names above are implemented in this revision. More REA operations, verified non-Windows desktop builds, general firmware format support, recovered runtime behavior and persistent graph positions are not supplied by these types. No planned architecture is listed as a working capability.", ""])
+    lines.extend(["## Implemented versus future work", "", "All names above are implemented in this revision. More REA operations, broader macOS live-tool validation, Linux desktop qualification, general firmware format support, recovered runtime behavior and persistent graph positions are not supplied by these types. No planned architecture is listed as a working capability.", ""])
     return "\n".join(lines), len(found)
 
 def main():

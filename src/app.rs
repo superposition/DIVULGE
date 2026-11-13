@@ -37,6 +37,10 @@ struct CodeJob {
 }
 
 pub struct DivulgeApp {
+    matrix: Option<divulge::byte_matrix::ByteMatrix>,
+    matrix_view: crate::matrix_view::MatrixView,
+    matrix_fresh: bool,
+    show_matrix: bool,
     session: Investigation,
     history: divulge::history::History,
     history_view: crate::history_view::HistoryView,
@@ -89,6 +93,10 @@ impl DivulgeApp {
         let mut graph = GraphView::default();
         graph.reset(&session);
         let mut app = Self {
+            matrix: preview_matrix(&session),
+            matrix_view: Default::default(),
+            matrix_fresh: false,
+            show_matrix: false,
             history: divulge::history::History::new(
                 &session,
                 "Synthetic teaching baseline; no tools executed",
@@ -256,6 +264,10 @@ impl DivulgeApp {
     }
 
     fn replace(&mut self, session: Investigation, fresh: bool) {
+        self.matrix = preview_matrix(&session);
+        self.matrix_view = Default::default();
+        self.matrix_fresh = false;
+        self.show_matrix = false;
         self.history = divulge::history::History::new(
             &session,
             "Starting investigation snapshot; prior chronology unavailable",
@@ -423,6 +435,7 @@ impl DivulgeApp {
     }
 
     fn open_code(&mut self) {
+        self.show_matrix = false;
         self.show_code = true;
         let report = self.session.disassemblies.iter().rev().find(|report| {
             self.session
@@ -690,6 +703,7 @@ impl DivulgeApp {
                     .clicked()
                 {
                     self.show_data = true;
+                    self.show_matrix = false;
                     ui.close();
                 }
                 if ui
@@ -1020,11 +1034,15 @@ impl DivulgeApp {
     fn center(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if ui
-                .selectable_label(!self.show_data && !self.show_code, "Graph")
+                .selectable_label(
+                    !self.show_data && !self.show_code && !self.show_matrix,
+                    "Graph",
+                )
                 .clicked()
             {
                 self.show_code = false;
                 self.show_data = false;
+                self.show_matrix = false;
                 self.graph.focus_result(
                     &self.session,
                     self.attention.selected_index,
@@ -1032,18 +1050,63 @@ impl DivulgeApp {
                 );
             }
             if ui
-                .selectable_label(self.show_data && !self.show_code, "Data")
+                .selectable_label(
+                    self.show_data && !self.show_code && !self.show_matrix,
+                    "Data",
+                )
                 .clicked()
             {
                 self.show_data = true;
                 self.show_code = false;
+                self.show_matrix = false;
             }
-            if ui.selectable_label(self.show_code, "Code").clicked() {
+            if ui
+                .selectable_label(self.show_code && !self.show_matrix, "Code")
+                .clicked()
+            {
                 self.open_code();
+            }
+            if ui.selectable_label(self.show_matrix, "3D matrix").clicked() {
+                self.show_matrix = true;
             }
         });
         ui.separator();
         ui.add_space(8.0);
+        if self.show_matrix {
+            if let Some(data) = &self.matrix {
+                let source = self
+                    .session
+                    .artifact
+                    .as_ref()
+                    .map(|artifact| {
+                        format!(
+                            "Original file: {} · SHA-256 {}",
+                            artifact.name, artifact.sha256
+                        )
+                    })
+                    .unwrap_or_else(|| "Recorded synthetic teaching bytes".into());
+                let coverage = if self.matrix_fresh {
+                    format!(
+                        "Whole original file: all {} bytes counted. Source offsets are file offsets; no code or runtime behavior is inferred.",
+                        data.length
+                    )
+                } else if let Some(artifact) = &self.session.artifact {
+                    format!(
+                        "Recorded preview only: {} of {} source bytes. File > Verify source loads the complete, hash-matched file for trend analysis.",
+                        data.length, artifact.length
+                    )
+                } else {
+                    "Recorded teaching bytes only; open a firmware file for a full-source matrix."
+                        .into()
+                };
+                self.matrix_view.show(ui, data, &source, &coverage);
+            } else {
+                ui.label(
+                    "Open an artifact or a case with recorded bytes to populate the 3D matrix.",
+                );
+            }
+            return;
+        }
         if self.show_code {
             let action = self.code.show(
                 ui,
@@ -1466,6 +1529,8 @@ impl eframe::App for DivulgeApp {
                                         .is_some_and(|a| a.firmware.is_none())
                                         && inspection.image.is_none());
                                 if matches && image_matches {
+                                    self.matrix = Some(inspection.matrix);
+                                    self.matrix_fresh = true;
                                     self.image = inspection.image.map(Arc::new);
                                     self.imported_fresh = true;
                                     self.source_path = Some(inspection.path);
@@ -1479,6 +1544,8 @@ impl eframe::App for DivulgeApp {
                                     true,
                                 );
                                 self.image = inspection.image.map(Arc::new);
+                                self.matrix = Some(inspection.matrix);
+                                self.matrix_fresh = true;
                                 self.source_path = Some(inspection.path);
                                 self.dirty = true;
                                 self.history_dirty = true;
@@ -1631,7 +1698,7 @@ impl eframe::App for DivulgeApp {
                 .frame(egui::Frame::new().fill(PANEL).inner_margin(14))
                 .show(ui, |ui| self.tree(ui));
         }
-        if self.show_insight {
+        if self.show_insight && !self.show_matrix {
             egui::Panel::right("insight")
                 .default_size(420.0)
                 .size_range(360.0..=680.0)
@@ -1664,6 +1731,21 @@ pub(crate) fn command_label() -> &'static str {
     } else {
         "Ctrl"
     }
+}
+
+fn preview_matrix(session: &Investigation) -> Option<divulge::byte_matrix::ByteMatrix> {
+    if let Some(artifact) = &session.artifact {
+        return divulge::byte_matrix::ByteMatrix::from_bytes(&artifact.preview, 0).ok();
+    }
+    session
+        .records
+        .iter()
+        .find_map(|record| match &record.data {
+            RecordData::Observation(bytes) => {
+                divulge::byte_matrix::ByteMatrix::from_bytes(&bytes.bytes, bytes.offset.0).ok()
+            }
+            _ => None,
+        })
 }
 
 fn configure_style(ctx: &egui::Context) {

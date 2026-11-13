@@ -1,4 +1,5 @@
 //! Domain records are independent of egui so they can also teach the workshop.
+pub mod byte_matrix;
 pub mod coordinates;
 pub mod decoded_image;
 mod disassembly_records;

@@ -40,9 +40,15 @@ Actual Windows capture immediately after launching the native egui app, with its
 
 ![DIVULGE opening screen on Windows: investigation tree, evidence graph and Harness Insight](docs/images/first-screen-windows.jpg)
 
+Apple Silicon macOS, opening the included saved workshop in the compact native window:
+
+![DIVULGE opening screen on Apple Silicon macOS with the saved synthetic workshop](docs/images/first-screen-macos.png)
+
 ### Investigate your own artifact
 
-Use **File > Open artifact** to select a local file. DIVULGE hashes the file and records its identity; exact supported FM-1 V15 firmware also enables the decoded **Data** view. Choose **Graph**, **Data** or **Code** to inspect related evidence. Firmware and vendor tools are supplied separately. The app does not execute or flash the firmware.
+Use **File > Open artifact** to select a local file. DIVULGE hashes the file and records its identity; exact supported FM-1 V15 firmware also enables the decoded **Data** view. Choose **Graph**, **Data**, **Code** or **3D matrix** to inspect it. Firmware and vendor tools are supplied separately. The app does not execute or flash the firmware.
+
+**3D matrix** shows firmware-byte trends: X is byte value, Y is consecutive file regions, height is frequency, and color is region entropy. Drag to rotate, use the camera sliders, or click a point to inspect its exact file range and counts. The numeric region/byte controls provide the same selection. A saved case initially shows its labelled preview; **File > Verify source** enables the complete source matrix. See [reading source-byte trends](docs/source-matrix.md) for limits and interpretation. Only opening-screen screenshots are included above.
 
 Live operations are optional and need tools installed on that computer:
 
@@ -65,6 +71,7 @@ Missing tools are reported as unavailable. The sections below document exact con
 - Local artifact hashing, bounded byte previews, and comparison with the configured V15 identity.
 - Exact-V15 FWSC decoding: eight package entries, header and directory CRCs, raw member CRC comparisons, SFC/JLFS application decoding, and source mappings back to the original file.
 - A compact **Data** view shares selection with **Graph**. Inspect field locations and Rust types, sizes, hashes, raw/decoded bytes, flash offsets, and the application's declared address. **Neighbors** brings a record's immediate relationships together.
+- A native **3D matrix** counts original source bytes across consecutive file regions. Rotate/zoom the frequency plot, compare region entropy and inspect exact byte ranges; saved previews remain distinct from freshly verified whole files.
 - A **Code** view runs the installed vendor pi32v2 disassembler on selected application bytes. It shows 2/4/6-byte instructions, original source offsets, a conservative basic-block graph, and instruction questions, explanations and next probes.
 - Each run retains its tool identity, version, flags, exact input, raw outputs, coverage and outcome. Unknown transfers and hardware loops remain unresolved. Cancellation, timeout and tool failure preserve partial output.
 - Ordered case history, retained note revisions, analyst steering/corrections/resolutions, offline checkpoint replay, backup recovery and scoped review exports. See [history and sharing](docs/history.md).
@@ -153,7 +160,7 @@ cargo run --locked -- --session investigation.divulge.json --artifact /path/to/F
 
 The Rust introduction follows one example: `[0x34, 0x12]` becomes an observation, a chosen interpretation, and an unanswered question. It covers bytes, collections, structs, enums, Option, Result, borrowing, and distinct coordinate types.
 
-Follow [the workshop](docs/workshop.md) for Rust code blocks, their output and explanations to read alongside the app. [The talk](docs/talk.md) continues into FM-1 coordinates, pi32v2 instructions, REA evidence and bounded AI investigations. The [type catalogue](docs/type-catalogue.md) covers all 124 named application types. The [18-page workbook](docs/workbook-build.md) uses the same code and spoken narrative.
+Follow [the workshop](docs/workshop.md) for Rust code blocks, their output and explanations to read alongside the app. [The talk](docs/talk.md) continues into FM-1 coordinates, pi32v2 instructions, REA evidence and bounded AI investigations. The [type catalogue](docs/type-catalogue.md) covers all 127 named application types. The [18-page workbook](docs/workbook-build.md) uses the same code and spoken narrative.
 
 [Download the code-oriented workbook](https://github.com/superposition/DIVULGE/releases/download/v0.1.0/DIVULGE-workshop-code.pdf).
 

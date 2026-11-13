@@ -350,6 +350,27 @@
       "types": {
         "HistoryView": "Checkpoint, review and portable-export form state"
       }
+    },
+    {
+      "module": "byte_matrix",
+      "creator": "Bounded summary of the same source read used for artifact hashing",
+      "states": "At most 64 contiguous regions; exact counts, lengths and offsets; empty input has no rows",
+      "ui": "3D matrix region/byte inspector",
+      "prevents": "Confusing a preview with a whole file or a byte distribution with recovered behavior",
+      "types": {
+        "ByteWindow": "One original-source span with 256 exact counts, entropy and a bounded preview",
+        "ByteMatrix": "Whole input-span partition used only for statistical presentation"
+      }
+    },
+    {
+      "module": "matrix_view",
+      "creator": "Native egui source-matrix controls",
+      "states": "Bounded camera, region and byte selection; no evidence or tool execution",
+      "ui": "3D matrix projection, camera sliders and exact range inspector",
+      "prevents": "Turning camera motion or point selection into a new evidence claim",
+      "types": {
+        "MatrixView": "Presentation camera and selection over exact byte statistics"
+      }
     }
   ]
 }
