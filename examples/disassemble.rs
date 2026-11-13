@@ -11,16 +11,23 @@ use std::{path::Path, sync::atomic::AtomicBool};
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
     let path = args.get(1).ok_or(
-        "Usage: cargo run --example disassemble -- <V15 file> [--save <investigation.json>]",
+        "Usage: cargo run --example disassemble -- <V15 file> [--save <investigation.json>] [--tool <host-executable>]",
     )?;
     let inspection = storage::inspect_with_image(Path::new(path))?;
     let image = inspection.image.ok_or("Exact V15 application required")?;
+    let mut config = ToolConfig::default();
+    if let Some(index) = args.iter().position(|arg| arg == "--tool") {
+        config.executable = args
+            .get(index + 1)
+            .ok_or("--tool requires an executable")?
+            .clone();
+    }
     let report = pi32::disassemble(
         &image,
         RunId(1),
         ImageOffset(0),
         256,
-        &ToolConfig::default(),
+        &config,
         &AtomicBool::new(false),
     )?;
     println!(

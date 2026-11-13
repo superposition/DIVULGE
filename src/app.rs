@@ -1231,11 +1231,11 @@ impl DivulgeApp {
         );
         self.engine_action(action, ctx);
         egui::Window::new("About DIVULGE").open(&mut self.show_about).resizable(false).show(ctx, |ui| {
-            ui.heading("DIVULGE 0.1.0");
+            ui.heading(format!("DIVULGE {}", env!("CARGO_PKG_VERSION")));
             ui.label("An investigation workbench for understanding how we know.");
             ui.label("Native Rust + egui. MIT licensed project code.");
             ui.separator();
-            ui.label("Foundation build: artifact identity, evidence graph, Harness Insight, notes, save/open, and replay.");
+            ui.label("Artifact identity, evidence graph, Harness Insight, notes, save/open, and replay.");
             ui.label("V15 decoding, pi32v2 disassembly, REA entropy evidence and bounded OMP investigation cycles are available.");
             ui.label("Repository: github.com/superposition/DIVULGE");
         });
@@ -1252,7 +1252,7 @@ impl DivulgeApp {
             ] { ui.label(line); ui.add_space(6.0); }
             ui.separator();
             ui.monospace("cargo run --example workshop_types");
-            ui.label("The PDF workshop is tracked in the repository roadmap. This example uses synthetic bytes; it makes no claim about FM-1 behavior.");
+            ui.label("The release includes an 18-page workshop PDF, six runnable checkpoints and a saved synthetic replay. See docs/workshop.md. These teaching bytes make no claim about FM-1 behavior.");
         });
         if let Some(error) = self.error.clone() {
             egui::Window::new("Operation could not complete")

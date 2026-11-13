@@ -20,7 +20,7 @@ The first case study is official M-VAVE FM-1 V15 firmware and the pi32v2 archite
 - Each run retains its tool identity, version, flags, exact input, raw outputs, coverage and outcome. Unknown transfers and hardware loops remain unresolved. Cancellation, timeout and tool failure preserve partial output.
 - Ordered case history, retained note revisions, analyst steering/corrections/resolutions, offline checkpoint replay, backup recovery and scoped review exports. See [history and sharing](docs/history.md).
 - **Model > OMP models and next step** discovers the installed OMP catalogue and proposes a source-linked next byte span. Review its why/how/outcome in Harness Insight, then stage the span in Code. Requests are cancellable; drafts and incomplete outcomes remain distinct from completed proposals.
-- Six runnable Rust workshop checkpoints, a checked type catalogue and a deterministic synthetic replay with an analyst correction.
+- Six runnable Rust workshop checkpoints, a checked type catalogue, an 18-page companion workbook and a deterministic synthetic replay with an analyst correction.
 - **AI cycle** runs checked proposals sequentially within a chosen scope and budget, with Pause, Resume, Stop and reuse of completed requests. Each follow-up explanation cites actual evidence and states its limitations. See [bounded execution](docs/execution.md).
 
 Bounded AI cycles support the synthetic byte fixture and freshly verified V15 application disassembly. Manual proposals and probe controls remain available. REA supplies canonical entropy evidence through its separate manual operation. Package decoding and the vendor disassembler run locally. Instruction explanations are deterministic descriptions; OMP interpretations are labeled inferred model output. The app does not execute or flash firmware.
@@ -104,7 +104,7 @@ cargo run --locked -- --session investigation.divulge.json --artifact /path/to/F
 
 The 20-minute introduction follows one example: `[0x34, 0x12]` becomes an observation, a chosen interpretation, and an unanswered question. It covers bytes, collections, structs, enums, Option, Result, borrowing, and distinct coordinate types.
 
-Follow [the workshop route](docs/workshop.md) for six runnable checkpoints, the intentional compiler-error exercise, expected answers and recovery instructions. The [type catalogue](docs/type-catalogue.md) is checked against all 124 named application types. The companion PDF and timed rehearsal remain tracked deliverables.
+Follow [the workshop route](docs/workshop.md) for six runnable checkpoints, the intentional compiler-error exercise, expected answers and recovery instructions. The [type catalogue](docs/type-catalogue.md) is checked against all 124 named application types. The [18-page workbook](docs/workbook-build.md) is reproducibly built and visually verified. The [developer talk route](docs/talk.md) extends the session to 60, 75 or 90 minutes.
 
 ```sh
 python scripts/check_workshop.py
