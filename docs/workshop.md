@@ -113,4 +113,4 @@ python scripts/check_workshop.py
 python scripts/check_catalogue.py --write
 ```
 
-The generator is deterministic and uses only the built-in synthetic fixture. The checker compares exact example outputs, rejects the wrong coordinate with the expected compiler error, runs the answer, regenerates both JSON files and reconstructs the saved replay offline. PDF production and visual review remain a separate deliverable until its rendered pages are verified.
+The generator is deterministic and uses only the built-in synthetic fixture. The checker compares exact example outputs, rejects the wrong coordinate with the expected compiler error, runs the answer, regenerates both JSON files and reconstructs the saved replay offline. The 18-page companion workbook is generated and visually checked; see [its build and review instructions](workbook-build.md). Timed operator rehearsal and final release packaging remain separate checks.
